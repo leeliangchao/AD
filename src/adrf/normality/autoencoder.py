@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from typing import Sequence
 from typing import Any
 
 import torch
@@ -11,7 +12,32 @@ from torch import nn
 
 from adrf.core.artifacts import NormalityArtifacts
 from adrf.core.sample import Sample
+from adrf.normality.diffusion_basic import _normalize_channel_mults
 from adrf.normality.base import BaseNormalityModel
+
+
+class _ConvStack(nn.Module):
+    """A configurable conv stack used for stronger encoder/decoder stages."""
+
+    def __init__(self, in_channels: int, out_channels: int, num_blocks: int) -> None:
+        super().__init__()
+        layers: list[nn.Module] = [
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
+            nn.SiLU(inplace=True),
+        ]
+        for _ in range(num_blocks - 1):
+            layers.extend(
+                [
+                    nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
+                    nn.SiLU(inplace=True),
+                ]
+            )
+        self.network = nn.Sequential(*layers)
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        """Run the stage conv stack."""
+
+        return self.network(inputs)
 
 
 class AutoEncoderNormality(nn.Module, BaseNormalityModel):
@@ -21,38 +47,52 @@ class AutoEncoderNormality(nn.Module, BaseNormalityModel):
         self,
         input_channels: int = 3,
         hidden_channels: int = 16,
+        base_channels: int | None = None,
+        channel_mults: Sequence[int] | None = None,
         latent_channels: int = 32,
+        num_blocks_per_stage: int = 1,
         learning_rate: float = 1e-3,
         epochs: int = 1,
         batch_size: int = 8,
     ) -> None:
         super().__init__()
+        resolved_base_channels = int(base_channels if base_channels is not None else hidden_channels)
+        if resolved_base_channels < 1:
+            raise ValueError("base_channels must be at least 1.")
+        if latent_channels < 1:
+            raise ValueError("latent_channels must be at least 1.")
+        if num_blocks_per_stage < 1:
+            raise ValueError("num_blocks_per_stage must be at least 1.")
         self.learning_rate = learning_rate
         self.epochs = epochs
         self.batch_size = batch_size
-        self.encoder = nn.Sequential(
-            nn.Conv2d(input_channels, hidden_channels, kernel_size=3, stride=2, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(hidden_channels, latent_channels, kernel_size=3, stride=2, padding=1),
-            nn.ReLU(inplace=True),
-        )
-        self.decoder = nn.Sequential(
-            nn.ConvTranspose2d(
-                latent_channels,
-                hidden_channels,
-                kernel_size=4,
-                stride=2,
-                padding=1,
-            ),
-            nn.ReLU(inplace=True),
-            nn.ConvTranspose2d(
-                hidden_channels,
-                input_channels,
-                kernel_size=4,
-                stride=2,
-                padding=1,
-            ),
-        )
+        self.base_channels = resolved_base_channels
+        self.hidden_channels = resolved_base_channels
+        self.channel_mults = _normalize_channel_mults(channel_mults)
+        self.latent_channels = int(latent_channels)
+        self.num_blocks_per_stage = int(num_blocks_per_stage)
+
+        encoder_channels = [self.base_channels * multiplier for multiplier in self.channel_mults]
+        encoder_layers: list[nn.Module] = []
+        current_channels = input_channels
+        for stage_channels in encoder_channels:
+            encoder_layers.append(_ConvStack(current_channels, stage_channels, self.num_blocks_per_stage))
+            encoder_layers.append(nn.Conv2d(stage_channels, stage_channels, kernel_size=4, stride=2, padding=1))
+            encoder_layers.append(nn.SiLU(inplace=True))
+            current_channels = stage_channels
+        encoder_layers.append(nn.Conv2d(current_channels, self.latent_channels, kernel_size=3, padding=1))
+        encoder_layers.append(nn.SiLU(inplace=True))
+        self.encoder = nn.Sequential(*encoder_layers)
+
+        decoder_layers: list[nn.Module] = []
+        current_channels = self.latent_channels
+        for stage_channels in reversed(encoder_channels):
+            decoder_layers.append(nn.ConvTranspose2d(current_channels, stage_channels, kernel_size=4, stride=2, padding=1))
+            decoder_layers.append(nn.SiLU(inplace=True))
+            decoder_layers.append(_ConvStack(stage_channels, stage_channels, self.num_blocks_per_stage))
+            current_channels = stage_channels
+        decoder_layers.append(nn.Conv2d(current_channels, input_channels, kernel_size=3, padding=1))
+        self.decoder = nn.Sequential(*decoder_layers)
         self.last_fit_loss: float | None = None
         self.eval()
 

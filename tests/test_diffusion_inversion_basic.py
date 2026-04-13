@@ -25,6 +25,8 @@ def test_diffusion_inversion_basic_emits_trajectory_and_step_costs() -> None:
     model = DiffusionInversionBasicNormality(
         input_channels=3,
         hidden_channels=8,
+        time_embed_dim=32,
+        num_train_timesteps=32,
         learning_rate=1e-3,
         epochs=1,
         batch_size=2,
@@ -51,4 +53,5 @@ def test_diffusion_inversion_basic_emits_trajectory_and_step_costs() -> None:
     assert all(isinstance(cost_map, torch.Tensor) for cost_map in step_costs)
     assert trajectory[0].shape == trajectory[-1].shape == (3, 16, 16)
     assert step_costs[0].shape == step_costs[-1].shape == (16, 16)
-
+    assert artifacts.get_diag("time_embed_dim") == 32
+    assert artifacts.get_diag("num_train_timesteps") == 32

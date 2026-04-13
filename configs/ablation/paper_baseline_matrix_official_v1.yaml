@@ -1,0 +1,72 @@
+name: paper_baseline_matrix_official_v1
+description: >
+  Official baseline comparison contract for the current AD research framework.
+  This matrix fixes the comparison scope and only uses fields that enter the
+  executable runner/matrix path today.
+
+datasets:
+  - name: mvtec_bottle
+    dataset_config: configs/dataset/mvtec_bottle.yaml
+  - name: mvtec_capsule
+    dataset_config: configs/dataset/mvtec_capsule.yaml
+  - name: mvtec_grid
+    dataset_config: configs/dataset/mvtec_grid.yaml
+
+normality:
+  - feature_memory
+  - autoencoder
+  - diffusion_basic
+  - diffusion_inversion_basic
+  - reference_basic
+  - reference_diffusion_basic
+
+evidence:
+  - feature_distance
+  - reconstruction_residual
+  - noise_residual
+  - path_cost
+  - direction_mismatch
+  - conditional_violation
+
+representation_map:
+  feature_memory: feature
+  autoencoder: pixel
+  diffusion_basic: pixel
+  diffusion_inversion_basic: pixel
+  reference_basic: pixel
+  reference_diffusion_basic: pixel
+
+compatibility:
+  feature_memory:
+    - feature_distance
+  autoencoder:
+    - reconstruction_residual
+  diffusion_basic:
+    - noise_residual
+  diffusion_inversion_basic:
+    - path_cost
+    - direction_mismatch
+  reference_basic:
+    - conditional_violation
+  reference_diffusion_basic:
+    - noise_residual
+
+protocol: one_class
+evaluation: default
+runtime_config: configs/runtime/real.yaml
+
+seeds: [0, 1, 2]
+
+overrides:
+  trainer:
+    max_epochs: 10
+  dataloader:
+    batch_size: 32
+  optimization:
+    lr: 1.0e-4
+  dataset:
+    image_size: [256, 256]
+  diffusion:
+    num_steps: 10
+  normality:
+    backend: legacy

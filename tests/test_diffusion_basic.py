@@ -25,6 +25,8 @@ def test_diffusion_basic_fit_and_infer_emit_noise_artifacts() -> None:
     model = DiffusionBasicNormality(
         input_channels=3,
         hidden_channels=8,
+        time_embed_dim=32,
+        num_train_timesteps=32,
         learning_rate=1e-3,
         epochs=1,
         batch_size=2,
@@ -43,4 +45,5 @@ def test_diffusion_basic_fit_and_infer_emit_noise_artifacts() -> None:
     assert isinstance(predicted_noise, torch.Tensor)
     assert isinstance(target_noise, torch.Tensor)
     assert predicted_noise.shape == target_noise.shape == (3, 16, 16)
-
+    assert artifacts.get_diag("time_embed_dim") == 32
+    assert artifacts.get_diag("num_train_timesteps") == 32

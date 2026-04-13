@@ -2,6 +2,27 @@
 
 Industrial anomaly detection research framework for running single experiments, benchmark suites, ablation matrices, and audited report exports.
 
+## Official Baseline Contract
+
+The official baseline comparison contract is now pinned at:
+
+```bash
+configs/ablation/paper_baseline_matrix_official_v1.yaml
+```
+
+Its executable contract is intentionally narrow:
+
+- Runtime contract: `ExperimentRunner.run()` delegates the lifecycle to `protocol.run(runner)`, while protocol implementations expose `train_epoch(runner)` and `evaluate(runner)` as the decomposed phases.
+- Fixed comparison scope: datasets `bottle/capsule/grid`, seeds `0/1/2`, `runtime_config: configs/runtime/real.yaml`, and `normality.backend: legacy` where the family supports a backend.
+- Fixed comparison outputs: matrix records are expected to carry `image_auroc`, `pixel_auroc`, `pixel_aupr`, `train_time`, and `total_time`.
+- Official config only keeps fields that currently enter the execution path. Legacy pseudo-fields such as `output.summary_dir`, `output.keep_per_seed_runs`, `defaults.run_mode`, `defaults.save_checkpoint`, `defaults.export_report`, `defaults.export_predictions`, and `defaults.logger` are not part of the official contract.
+
+Filled baseline configs are staged separately:
+
+- Smoke: `configs/ablation/paper_baseline_matrix_official_v1_filled_smoke.yaml`
+- Full contract: `configs/ablation/paper_baseline_matrix_official_v1_filled.yaml`
+- Runner wrapper: `uv run python scripts/run_official_filled_matrix.py --config <matrix.yaml>`
+
 ## Current Status
 
 This repository is no longer just a round-1 scaffold. The implemented surface includes:

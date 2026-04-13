@@ -8,7 +8,7 @@ from adrf.protocol.base import BaseProtocol
 
 
 class OneClassProtocol(BaseProtocol):
-    """Train on normal data only, then evaluate the full AD pipeline on test data."""
+    """Runner-based one-class protocol for the shared AD experiment lifecycle."""
 
     def train_epoch(self, runner: Any) -> dict[str, Any]:
         """Collect train representations and fit the configured normality model."""
@@ -42,4 +42,3 @@ class OneClassProtocol(BaseProtocol):
                 prediction = runner.evidence.predict(sample, artifacts)
                 runner.evaluator.update(prediction, sample)
         return runner.evaluator.compute()
-

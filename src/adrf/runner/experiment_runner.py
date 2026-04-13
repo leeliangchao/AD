@@ -179,13 +179,20 @@ class ExperimentRunner:
             if record_memory and self.device.type == "cuda":
                 torch.cuda.reset_peak_memory_stats(self.device)
 
-            train_start = time.perf_counter()
-            train_results = self.train()
-            train_time = time.perf_counter() - train_start
+            protocol_start = time.perf_counter()
+            protocol_results = self.protocol.run(self)
+            total_protocol_time = time.perf_counter() - protocol_start
+            train_results, evaluation_results = self._normalize_protocol_results(protocol_results)
 
-            eval_start = time.perf_counter()
-            evaluation_results = self.evaluate()
-            eval_time = time.perf_counter() - eval_start
+            train_time = self._maybe_float(train_results.get("train_time"))
+            eval_time = self._maybe_float(train_results.get("eval_time"))
+            if train_time is None and eval_time is not None:
+                train_time = max(total_protocol_time - eval_time, 0.0)
+            if eval_time is None and train_time is not None:
+                eval_time = max(total_protocol_time - train_time, 0.0)
+            if train_time is None and eval_time is None:
+                train_time = total_protocol_time
+                eval_time = 0.0
             total_time = time.perf_counter() - total_start
             peak_memory = (
                 int(torch.cuda.max_memory_allocated(self.device))
@@ -219,6 +226,34 @@ class ExperimentRunner:
 
         if self.datamodule is None:
             self.setup()
+
+    @staticmethod
+    def _normalize_protocol_results(results: Any) -> tuple[dict[str, Any], dict[str, float]]:
+        """Validate and normalize the protocol return payload."""
+
+        if not isinstance(results, Mapping):
+            raise TypeError("Protocol.run() must return a mapping with `train` and `evaluation` keys.")
+
+        train_results = results.get("train")
+        evaluation_results = results.get("evaluation")
+        if not isinstance(train_results, Mapping):
+            raise TypeError("Protocol.run() must return a mapping under the `train` key.")
+        if not isinstance(evaluation_results, Mapping):
+            raise TypeError("Protocol.run() must return a mapping under the `evaluation` key.")
+
+        return dict(train_results), {
+            str(key): float(value)
+            for key, value in evaluation_results.items()
+            if isinstance(value, (int, float))
+        }
+
+    @staticmethod
+    def _maybe_float(value: Any) -> float | None:
+        """Return a float when the value is numeric."""
+
+        if isinstance(value, (int, float)):
+            return float(value)
+        return None
 
     def _resolve_datamodule_spec(self, spec: Mapping[str, Any]) -> dict[str, Any]:
         """Resolve datamodule filesystem paths relative to the config location."""

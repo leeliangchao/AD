@@ -17,7 +17,10 @@ normality:
   name: reference_basic
   params:
     input_channels: 3
-    hidden_channels: 8
+    base_channels: 12
+    condition_channels: 8
+    channel_mults: [1, 2]
+    num_res_blocks: 2
     learning_rate: 0.001
     epochs: 1
     batch_size: 2
@@ -34,4 +37,3 @@ evaluator:
 protocol:
   name: one_class
   params: {}
-

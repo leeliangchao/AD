@@ -17,7 +17,12 @@ normality:
   name: reference_diffusion_basic
   params:
     input_channels: 3
-    hidden_channels: 8
+    base_channels: 16
+    condition_channels: 12
+    channel_mults: [1, 2]
+    num_res_blocks: 2
+    time_embed_dim: 64
+    num_train_timesteps: 100
     learning_rate: 0.001
     epochs: 1
     batch_size: 2
@@ -35,4 +40,3 @@ evaluator:
 protocol:
   name: one_class
   params: {}
-

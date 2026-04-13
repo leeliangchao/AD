@@ -17,13 +17,18 @@ normality:
   params:
     backend: legacy
     input_channels: 3
-    hidden_channels: 8
+    base_channels: 16
+    channel_mults: [1, 2, 2]
+    num_res_blocks: 2
+    time_embed_dim: 64
+    num_train_timesteps: 100
     learning_rate: 0.001
     epochs: 1
     batch_size: 2
     noise_level: 0.2
-    num_steps: 4
+    num_steps: 6
     step_size: 0.1
+    initial_noise_scale: 0.2
 
 evidence:
   name: path_cost

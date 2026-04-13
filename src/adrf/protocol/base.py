@@ -5,9 +5,11 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
+from adrf.core.interfaces import Protocol as ProtocolContract
 
-class BaseProtocol(ABC):
-    """Minimal protocol interface for training and evaluation orchestration."""
+
+class BaseProtocol(ProtocolContract, ABC):
+    """Minimal runner-based protocol contract used by ExperimentRunner."""
 
     @abstractmethod
     def train_epoch(self, runner: Any) -> dict[str, Any]:
@@ -24,4 +26,3 @@ class BaseProtocol(ABC):
             "train": self.train_epoch(runner),
             "evaluation": self.evaluate(runner),
         }
-

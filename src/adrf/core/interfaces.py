@@ -43,19 +43,19 @@ class EvidenceModel(ABC):
 
 
 class Protocol(ABC):
-    """Coordinate data flow across the shared pipeline stages."""
+    """Coordinate the runner-owned pipeline stages under one runtime contract."""
 
     @abstractmethod
-    def run(
-        self,
-        train_samples: Iterable[Sample],
-        test_samples: Iterable[Sample],
-        representation: Representation,
-        normality: NormalityModel,
-        evidence: EvidenceModel,
-        evaluator: "Evaluator",
-    ) -> dict[str, Any]:
-        """Execute training and evaluation for a protocol instance."""
+    def train_epoch(self, runner: Any) -> dict[str, Any]:
+        """Execute the training phase for a configured experiment runner."""
+
+    @abstractmethod
+    def evaluate(self, runner: Any) -> dict[str, float]:
+        """Execute evaluation for a configured experiment runner."""
+
+    @abstractmethod
+    def run(self, runner: Any) -> dict[str, Any]:
+        """Execute the full protocol lifecycle for a configured experiment runner."""
 
 
 class Evaluator(ABC):
@@ -72,4 +72,3 @@ class Evaluator(ABC):
     @abstractmethod
     def reset(self) -> None:
         """Clear any stored evaluation state."""
-

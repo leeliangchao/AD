@@ -1,9 +1,22 @@
+runtime_config: configs/runtime/real.yaml
+
+overrides:
+  trainer:
+    max_epochs: 10
+  dataloader:
+    batch_size: 32
+  optimization:
+    lr: 1.0e-4
+  dataset:
+    image_size: [256, 256]
+  normality:
+    backend: legacy
+
 datamodule:
   name: mvtec_single_class
   params:
-    root: ../../tests/fixtures/mvtec
+    root: ../../data/mvtec
     category: bottle
-    reference_index: 0
     image_size: [32, 32]
     batch_size: 2
     num_workers: 0
@@ -14,7 +27,7 @@ representation:
   params: {}
 
 normality:
-  name: diffusion_inversion_basic
+  name: diffusion_basic
   params:
     backend: legacy
     input_channels: 3
@@ -27,15 +40,11 @@ normality:
     epochs: 1
     batch_size: 2
     noise_level: 0.2
-    num_steps: 6
-    step_size: 0.1
-    initial_noise_scale: 0.2
 
 evidence:
-  name: direction_mismatch
+  name: noise_residual
   params:
     aggregator: mean
-    direction_reduce: sum
 
 evaluator:
   name: basic_ad

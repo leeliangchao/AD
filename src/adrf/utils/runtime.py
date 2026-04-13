@@ -224,7 +224,12 @@ def _make_diffusion_fit(model: Any):
             raise ValueError("DiffusionBasicNormality.fit requires at least one representation.")
 
         train_batch = torch.stack(tensors, dim=0)
-        optimizer = torch.optim.Adam(model.parameters(), lr=model.learning_rate)
+        if getattr(model, "backend", "legacy") == "diffusers":
+            model._ensure_diffusers_backend(sample_size=int(train_batch.shape[-1]))
+            optimizer = torch.optim.Adam(model.diffusers_adapter.parameters(), lr=model.learning_rate)
+            model.diffusers_adapter.train()
+        else:
+            optimizer = torch.optim.Adam(model.parameters(), lr=model.learning_rate)
         model.train()
         for _ in range(model.epochs):
             permutation = torch.randperm(train_batch.shape[0], device=train_batch.device)
@@ -232,9 +237,12 @@ def _make_diffusion_fit(model: Any):
             for start in range(0, shuffled.shape[0], model.batch_size):
                 clean_batch = shuffled[start : start + model.batch_size]
                 with _autocast_context(model):
-                    noisy_batch, target_noise = model._sample_noisy_inputs(clean_batch)
-                    predicted_noise = model.denoiser(noisy_batch)
-                    loss = functional.mse_loss(predicted_noise, target_noise)
+                    if getattr(model, "backend", "legacy") == "diffusers":
+                        loss, _ = model.diffusers_adapter.forward_train_step(clean_batch)
+                    else:
+                        noisy_batch, target_noise, timesteps = model._sample_noisy_inputs(clean_batch)
+                        predicted_noise = model.denoiser(noisy_batch, timesteps)
+                        loss = functional.mse_loss(predicted_noise, target_noise)
                 _optimizer_step(model, optimizer, loss)
                 model.last_fit_loss = float(loss.detach().cpu().item())
         model.eval()
@@ -312,9 +320,9 @@ def _make_reference_diffusion_fit(model: Any):
                 clean_batch = shuffled_images[start : start + model.batch_size]
                 reference_slice = shuffled_references[start : start + model.batch_size]
                 with _autocast_context(model):
-                    noisy_batch, target_noise = model._sample_noisy_inputs(clean_batch)
+                    noisy_batch, target_noise, timesteps = model._sample_noisy_inputs(clean_batch)
                     conditional_inputs = torch.cat([noisy_batch, reference_slice], dim=1)
-                    predicted_noise = model.conditional_denoiser(conditional_inputs)
+                    predicted_noise = model.conditional_denoiser(conditional_inputs, timesteps)
                     loss = functional.mse_loss(predicted_noise, target_noise)
                 _optimizer_step(model, optimizer, loss)
                 model.last_fit_loss = float(loss.detach().cpu().item())

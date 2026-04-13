@@ -1,0 +1,206 @@
+name: paper_baseline_matrix_official_v1_filled
+description: >
+  Stronger official baseline matrix. Preserves the official comparison contract
+  while replacing minimal model capacity with explicit filled baseline configs.
+
+runtime_config: configs/runtime/real.yaml
+seeds: [0, 1, 2]
+
+overrides:
+  trainer:
+    max_epochs: 10
+  dataloader:
+    batch_size: 32
+  optimization:
+    lr: 1.0e-4
+  dataset:
+    image_size: [256, 256]
+  diffusion:
+    num_steps: 10
+  normality:
+    backend: legacy
+
+defaults:
+  protocol:
+    name: one_class
+  evaluator:
+    name: basic_ad
+
+datasets:
+  mvtec_bottle:
+    name: mvtec_single_class
+    params:
+      root: ../../data/mvtec
+      category: bottle
+      reference_index: 0
+      image_size: [32, 32]
+      batch_size: 2
+      num_workers: 0
+      normalize: false
+  mvtec_capsule:
+    name: mvtec_single_class
+    params:
+      root: ../../data/mvtec
+      category: capsule
+      reference_index: 0
+      image_size: [32, 32]
+      batch_size: 2
+      num_workers: 0
+      normalize: false
+  mvtec_grid:
+    name: mvtec_single_class
+    params:
+      root: ../../data/mvtec
+      category: grid
+      reference_index: 0
+      image_size: [32, 32]
+      batch_size: 2
+      num_workers: 0
+      normalize: false
+
+representations:
+  pixel:
+    name: pixel
+    params: {}
+  feature:
+    name: feature
+    params:
+      pretrained: false
+      freeze: true
+
+normality:
+  feature_memory:
+    name: feature_memory
+    params: {}
+  autoencoder:
+    name: autoencoder
+    params:
+      input_channels: 3
+      base_channels: 8
+      channel_mults: [1, 2]
+      latent_channels: 24
+      num_blocks_per_stage: 2
+      learning_rate: 0.001
+      epochs: 1
+      batch_size: 2
+  diffusion_basic:
+    name: diffusion_basic
+    params:
+      backend: legacy
+      input_channels: 3
+      base_channels: 16
+      channel_mults: [1, 2, 2]
+      num_res_blocks: 2
+      time_embed_dim: 64
+      num_train_timesteps: 100
+      learning_rate: 0.001
+      epochs: 1
+      batch_size: 2
+      noise_level: 0.2
+  diffusion_inversion_basic:
+    name: diffusion_inversion_basic
+    params:
+      backend: legacy
+      input_channels: 3
+      base_channels: 16
+      channel_mults: [1, 2, 2]
+      num_res_blocks: 2
+      time_embed_dim: 64
+      num_train_timesteps: 100
+      learning_rate: 0.001
+      epochs: 1
+      batch_size: 2
+      noise_level: 0.2
+      num_steps: 6
+      step_size: 0.1
+      initial_noise_scale: 0.2
+  reference_basic:
+    name: reference_basic
+    params:
+      input_channels: 3
+      base_channels: 12
+      condition_channels: 8
+      channel_mults: [1, 2]
+      num_res_blocks: 2
+      learning_rate: 0.001
+      epochs: 1
+      batch_size: 2
+  reference_diffusion_basic:
+    name: reference_diffusion_basic
+    params:
+      input_channels: 3
+      base_channels: 16
+      condition_channels: 12
+      channel_mults: [1, 2]
+      num_res_blocks: 2
+      time_embed_dim: 64
+      num_train_timesteps: 100
+      learning_rate: 0.001
+      epochs: 1
+      batch_size: 2
+      noise_level: 0.2
+
+evidence:
+  feature_distance:
+    name: feature_distance
+    params:
+      aggregator: max
+  reconstruction_residual:
+    name: reconstruction_residual
+    params:
+      aggregator: mean
+  noise_residual:
+    name: noise_residual
+    params:
+      aggregator: mean
+  path_cost:
+    name: path_cost
+    params:
+      aggregator: mean
+  direction_mismatch:
+    name: direction_mismatch
+    params:
+      aggregator: mean
+      direction_reduce: sum
+  conditional_violation:
+    name: conditional_violation
+    params:
+      aggregator: mean
+
+axes:
+  datasets: [mvtec_bottle, mvtec_capsule, mvtec_grid]
+  representations: [pixel, feature]
+  normality:
+    [
+      feature_memory,
+      autoencoder,
+      diffusion_basic,
+      diffusion_inversion_basic,
+      reference_basic,
+      reference_diffusion_basic,
+    ]
+  evidence:
+    [
+      feature_distance,
+      reconstruction_residual,
+      noise_residual,
+      path_cost,
+      direction_mismatch,
+      conditional_violation,
+    ]
+
+compatibility:
+  normality_evidence:
+    feature_memory: [feature_distance]
+    autoencoder: [reconstruction_residual]
+    diffusion_basic: [noise_residual]
+    diffusion_inversion_basic: [path_cost, direction_mismatch]
+    reference_basic: [conditional_violation]
+    reference_diffusion_basic: [noise_residual]
+  representation_normality:
+    feature_memory: [feature]
+    autoencoder: [pixel]
+    diffusion_basic: [pixel]
+    diffusion_inversion_basic: [pixel]
+    reference_basic: [pixel]
+    reference_diffusion_basic: [pixel]

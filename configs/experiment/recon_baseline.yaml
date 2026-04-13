@@ -16,8 +16,10 @@ normality:
   name: autoencoder
   params:
     input_channels: 3
-    hidden_channels: 4
-    latent_channels: 8
+    base_channels: 8
+    channel_mults: [1, 2]
+    latent_channels: 24
+    num_blocks_per_stage: 2
     learning_rate: 0.001
     epochs: 1
     batch_size: 2
@@ -34,4 +36,3 @@ evaluator:
 protocol:
   name: one_class
   params: {}
-

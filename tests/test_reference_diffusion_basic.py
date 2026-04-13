@@ -26,6 +26,8 @@ def test_reference_diffusion_basic_fit_and_infer_emit_diffusion_artifacts() -> N
     model = ReferenceDiffusionBasicNormality(
         input_channels=3,
         hidden_channels=8,
+        time_embed_dim=32,
+        num_train_timesteps=32,
         learning_rate=1e-3,
         epochs=1,
         batch_size=2,
@@ -53,4 +55,5 @@ def test_reference_diffusion_basic_fit_and_infer_emit_diffusion_artifacts() -> N
     assert predicted_noise.shape == target_noise.shape == (3, 16, 16)
     assert reference_projection.shape == (3, 16, 16)
     assert conditional_alignment.shape == (16, 16)
-
+    assert artifacts.get_diag("time_embed_dim") == 32
+    assert artifacts.get_diag("num_train_timesteps") == 32
