@@ -1,0 +1,169 @@
+name: normality_evidence_multiseed
+continue_on_error: true
+seeds: [0, 1, 2]
+
+defaults:
+  protocol:
+    alias: one_class
+  evaluator:
+    alias: basic_ad
+
+datasets:
+  mvtec_bottle:
+    name: mvtec_single_class
+    params:
+      root: ../../tests/fixtures/mvtec
+      category: bottle
+      reference_index: 0
+      image_size: [32, 32]
+      batch_size: 2
+      num_workers: 0
+      normalize: false
+
+representations:
+  pixel:
+    name: pixel
+    params: {}
+  feature:
+    name: feature
+    params:
+      pretrained: false
+      freeze: true
+
+normality:
+  feature_memory:
+    name: feature_memory
+    params: {}
+  autoencoder:
+    name: autoencoder
+    params:
+      input_channels: 3
+      hidden_channels: 4
+      latent_channels: 8
+      learning_rate: 0.001
+      epochs: 1
+      batch_size: 2
+  reference_basic:
+    name: reference_basic
+    params:
+      input_channels: 3
+      hidden_channels: 8
+      learning_rate: 0.001
+      epochs: 1
+      batch_size: 2
+  diffusion_basic:
+    name: diffusion_basic
+    params:
+      input_channels: 3
+      hidden_channels: 8
+      learning_rate: 0.001
+      epochs: 1
+      batch_size: 2
+      noise_level: 0.2
+  diffusion_inversion_basic:
+    name: diffusion_inversion_basic
+    params:
+      input_channels: 3
+      hidden_channels: 8
+      learning_rate: 0.001
+      epochs: 1
+      batch_size: 2
+      noise_level: 0.2
+      num_steps: 4
+      step_size: 0.1
+  reference_diffusion_basic:
+    name: reference_diffusion_basic
+    params:
+      input_channels: 3
+      hidden_channels: 8
+      learning_rate: 0.001
+      epochs: 1
+      batch_size: 2
+      noise_level: 0.2
+
+evidence:
+  feature_distance:
+    name: feature_distance
+    params:
+      aggregator: max
+  reconstruction_residual:
+    name: reconstruction_residual
+    params:
+      aggregator: mean
+  conditional_violation:
+    name: conditional_violation
+    params:
+      aggregator: mean
+  noise_residual:
+    name: noise_residual
+    params:
+      aggregator: mean
+  path_cost:
+    name: path_cost
+    params:
+      aggregator: mean
+  direction_mismatch:
+    name: direction_mismatch
+    params:
+      aggregator: mean
+      direction_reduce: sum
+
+protocols:
+  one_class:
+    name: one_class
+    params: {}
+
+evaluators:
+  basic_ad:
+    name: basic_ad
+    params: {}
+
+axes:
+  datasets: [mvtec_bottle]
+  representations:
+    - pixel
+    - feature
+  normality:
+    - feature_memory
+    - autoencoder
+    - reference_basic
+    - diffusion_basic
+    - diffusion_inversion_basic
+    - reference_diffusion_basic
+  evidence:
+    - feature_distance
+    - reconstruction_residual
+    - conditional_violation
+    - noise_residual
+    - path_cost
+    - direction_mismatch
+
+compatibility:
+  normality_evidence:
+    feature_memory:
+      - feature_distance
+    autoencoder:
+      - reconstruction_residual
+    reference_basic:
+      - conditional_violation
+    diffusion_basic:
+      - noise_residual
+    diffusion_inversion_basic:
+      - path_cost
+      - direction_mismatch
+    reference_diffusion_basic:
+      - noise_residual
+  representation_normality:
+    feature_memory:
+      - feature
+    autoencoder:
+      - pixel
+    reference_basic:
+      - pixel
+    diffusion_basic:
+      - pixel
+    diffusion_inversion_basic:
+      - pixel
+    reference_diffusion_basic:
+      - pixel
+

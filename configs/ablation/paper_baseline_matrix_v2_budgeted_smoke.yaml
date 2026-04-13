@@ -1,0 +1,105 @@
+name: paper_baseline_matrix_v2_budgeted_smoke
+description: >
+  Smoke version of the budget-aligned paper baseline matrix.
+  Runs one category and one seed while preserving grouped table export
+  and effective budget tracking.
+
+datasets:
+  - name: mvtec_bottle
+    dataset_config: configs/dataset/mvtec_bottle.yaml
+
+normality:
+  - feature_memory
+  - autoencoder
+  - diffusion_basic
+  - diffusion_inversion_basic
+  - reference_basic
+  - reference_diffusion_basic
+
+evidence:
+  - feature_distance
+  - reconstruction_residual
+  - noise_residual
+  - path_cost
+  - direction_mismatch
+  - conditional_violation
+
+representation_map:
+  feature_memory: feature
+  autoencoder: pixel
+  diffusion_basic: pixel
+  diffusion_inversion_basic: pixel
+  reference_basic: pixel
+  reference_diffusion_basic: pixel
+
+compatibility:
+  feature_memory:
+    - feature_distance
+  autoencoder:
+    - reconstruction_residual
+  diffusion_basic:
+    - noise_residual
+  diffusion_inversion_basic:
+    - path_cost
+    - direction_mismatch
+  reference_basic:
+    - conditional_violation
+  reference_diffusion_basic:
+    - noise_residual
+
+protocol: one_class
+evaluation: default
+runtime_config: configs/runtime/smoke.yaml
+
+seeds: [0]
+
+overrides:
+  trainer:
+    max_epochs: 3
+  dataloader:
+    batch_size: 8
+  optimization:
+    lr: 1.0e-4
+  dataset:
+    root: tests/fixtures/mvtec
+    image_size: [32, 32]
+  normality:
+    num_steps: 10
+
+metrics:
+  primary:
+    - image_auroc
+    - pixel_auroc
+    - pixel_aupr
+    - train_time
+    - eval_time
+    - total_time
+  aggregate:
+    - mean
+    - std
+    - best
+    - count
+
+naming:
+  include_dataset: true
+  include_normality: true
+  include_evidence: true
+  include_seed: true
+  separator: "__"
+
+grouping:
+  keys:
+    - dataset
+    - normality
+    - evidence
+
+report:
+  markdown: true
+  csv: true
+  paper_table: true
+  grouped_tables: true
+  category_mean_table: true
+
+output:
+  summary_dir: outputs/ablations/paper_baseline_matrix_v2_budgeted_smoke
+  keep_per_seed_runs: true

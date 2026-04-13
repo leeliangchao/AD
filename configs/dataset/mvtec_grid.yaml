@@ -1,0 +1,9 @@
+name: mvtec_single_class
+params:
+  root: data/mvtec
+  category: grid
+  reference_index: 0
+  image_size: [32, 32]
+  batch_size: 2
+  num_workers: 0
+  normalize: false

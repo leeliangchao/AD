@@ -1,0 +1,111 @@
+name: diffusion_evidence_matrix
+continue_on_error: true
+
+defaults:
+  protocol:
+    alias: one_class
+  evaluator:
+    alias: basic_ad
+
+datasets:
+  mvtec_bottle:
+    name: mvtec_single_class
+    params:
+      root: ../../tests/fixtures/mvtec
+      category: bottle
+      reference_index: 0
+      image_size: [32, 32]
+      batch_size: 2
+      num_workers: 0
+      normalize: false
+
+representations:
+  pixel:
+    name: pixel
+    params: {}
+
+normality:
+  diffusion_basic:
+    name: diffusion_basic
+    params:
+      input_channels: 3
+      hidden_channels: 8
+      learning_rate: 0.001
+      epochs: 1
+      batch_size: 2
+      noise_level: 0.2
+  diffusion_inversion_basic:
+    name: diffusion_inversion_basic
+    params:
+      input_channels: 3
+      hidden_channels: 8
+      learning_rate: 0.001
+      epochs: 1
+      batch_size: 2
+      noise_level: 0.2
+      num_steps: 4
+      step_size: 0.1
+  reference_diffusion_basic:
+    name: reference_diffusion_basic
+    params:
+      input_channels: 3
+      hidden_channels: 8
+      learning_rate: 0.001
+      epochs: 1
+      batch_size: 2
+      noise_level: 0.2
+
+evidence:
+  noise_residual:
+    name: noise_residual
+    params:
+      aggregator: mean
+  path_cost:
+    name: path_cost
+    params:
+      aggregator: mean
+  direction_mismatch:
+    name: direction_mismatch
+    params:
+      aggregator: mean
+      direction_reduce: sum
+
+protocols:
+  one_class:
+    name: one_class
+    params: {}
+
+evaluators:
+  basic_ad:
+    name: basic_ad
+    params: {}
+
+axes:
+  datasets: [mvtec_bottle]
+  representations: [pixel]
+  normality:
+    - diffusion_basic
+    - diffusion_inversion_basic
+    - reference_diffusion_basic
+  evidence:
+    - noise_residual
+    - path_cost
+    - direction_mismatch
+
+compatibility:
+  normality_evidence:
+    diffusion_basic:
+      - noise_residual
+    diffusion_inversion_basic:
+      - path_cost
+      - direction_mismatch
+    reference_diffusion_basic:
+      - noise_residual
+  representation_normality:
+    diffusion_basic:
+      - pixel
+    diffusion_inversion_basic:
+      - pixel
+    reference_diffusion_basic:
+      - pixel
+

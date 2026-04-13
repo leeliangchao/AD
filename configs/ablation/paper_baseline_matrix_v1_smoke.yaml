@@ -1,0 +1,96 @@
+name: paper_baseline_matrix_v1_smoke
+description: >
+  Smoke version of paper_baseline_matrix_v1.
+  Runs only one category and one seed to validate matrix expansion, compatibility,
+  execution, aggregation, and table export.
+
+datasets:
+  - name: mvtec_bottle
+    dataset_config: configs/dataset/mvtec_bottle.yaml
+
+normality:
+  - feature_memory
+  - autoencoder
+  - diffusion_basic
+  - diffusion_inversion_basic
+  - reference_basic
+  - reference_diffusion_basic
+
+evidence:
+  - feature_distance
+  - reconstruction_residual
+  - noise_residual
+  - path_cost
+  - direction_mismatch
+  - conditional_violation
+
+representation_map:
+  feature_memory: feature
+  autoencoder: pixel
+  diffusion_basic: pixel
+  diffusion_inversion_basic: pixel
+  reference_basic: pixel
+  reference_diffusion_basic: pixel
+
+compatibility:
+  feature_memory:
+    - feature_distance
+  autoencoder:
+    - reconstruction_residual
+  diffusion_basic:
+    - noise_residual
+  diffusion_inversion_basic:
+    - path_cost
+    - direction_mismatch
+  reference_basic:
+    - conditional_violation
+  reference_diffusion_basic:
+    - noise_residual
+
+protocol: one_class
+evaluation: default
+
+seeds: [0]
+
+defaults:
+  run_mode: train_and_eval
+  save_checkpoint: true
+  export_report: true
+  export_predictions: false
+  logger:
+    local: true
+    swanlab: false
+
+metrics:
+  primary:
+    - image_auroc
+    - pixel_auroc
+    - pixel_aupr
+  aggregate:
+    - mean
+    - std
+    - best
+    - count
+
+naming:
+  include_dataset: true
+  include_normality: true
+  include_evidence: true
+  include_seed: true
+  separator: "__"
+
+grouping:
+  keys:
+    - dataset
+    - normality
+    - evidence
+
+report:
+  markdown: true
+  csv: true
+  paper_table: true
+
+output:
+  summary_dir: outputs/ablation/paper_baseline_matrix_v1_smoke
+  keep_per_seed_runs: true
+

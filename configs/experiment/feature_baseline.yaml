@@ -1,0 +1,33 @@
+datamodule:
+  name: mvtec_single_class
+  params:
+    root: ../../tests/fixtures/mvtec
+    category: bottle
+    image_size: [64, 64]
+    batch_size: 2
+    num_workers: 0
+    normalize: false
+
+representation:
+  name: feature
+  params:
+    pretrained: false
+    freeze: true
+
+normality:
+  name: feature_memory
+  params: {}
+
+evidence:
+  name: feature_distance
+  params:
+    aggregator: max
+
+evaluator:
+  name: basic_ad
+  params: {}
+
+protocol:
+  name: one_class
+  params: {}
+

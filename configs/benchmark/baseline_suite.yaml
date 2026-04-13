@@ -1,0 +1,7 @@
+name: baseline_suite
+continue_on_error: true
+experiments:
+  - ../experiment/feature_baseline.yaml
+  - ../experiment/recon_baseline.yaml
+  - ../experiment/reference_baseline.yaml
+

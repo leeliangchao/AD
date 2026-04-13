@@ -1,0 +1,7 @@
+name: diffusion_suite
+continue_on_error: true
+experiments:
+  - ../experiment/diffusion_baseline.yaml
+  - ../experiment/diffusion_pathcost_baseline.yaml
+  - ../experiment/diffusion_direction_baseline.yaml
+  - ../experiment/reference_diffusion_baseline.yaml

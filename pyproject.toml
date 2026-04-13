@@ -1,0 +1,36 @@
+[build-system]
+requires = ["hatchling>=1.25.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ad-research-framework"
+version = "0.1.0"
+description = "Industrial anomaly detection research framework with experiments, benchmarks, ablations, and reporting."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "diffusers>=0.35.0",
+    "numpy>=1.26.4",
+    "pillow>=10.4.0",
+    "pyyaml>=6.0.2",
+    "torch==2.10.0",
+    "torchvision",
+]
+
+[project.scripts]
+adrf = "adrf.cli.app:main"
+adrf-experiment = "adrf.cli.main:main"
+adrf-benchmark = "adrf.cli.benchmark:main"
+adrf-report = "adrf.cli.report:main"
+adrf-ablation = "adrf.cli.ablation:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.5",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/adrf"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
