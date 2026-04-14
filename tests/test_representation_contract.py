@@ -1,5 +1,8 @@
+from typing import get_args
+
 import torch
 
+from adrf.representation import RepresentationSpace
 from adrf.representation.contracts import (
     RepresentationBatch,
     RepresentationOutput,
@@ -70,6 +73,50 @@ def test_representation_batch_unbind_rejects_zero_rank_tensor() -> None:
         raise AssertionError("RepresentationBatch.unbind() should reject zero-rank tensors.")
 
 
+def test_representation_batch_unbind_rejects_non_spatial_rank_three_tensor() -> None:
+    batch = RepresentationBatch(
+        tensor=torch.arange(2 * 4 * 3, dtype=torch.float32).reshape(2, 4, 3),
+        space="feature",
+        spatial_shape=None,
+        feature_dim=4,
+        batch_size=2,
+        sample_ids=("sample-0", "sample-1"),
+        requires_grad=False,
+        device="cpu",
+        dtype="torch.float32",
+        provenance=_provenance(),
+    )
+
+    try:
+        batch.unbind()
+    except ValueError as exc:
+        assert "rank 2" in str(exc)
+    else:  # pragma: no cover - defensive branch for the failing pre-fix state
+        raise AssertionError("RepresentationBatch.unbind() should enforce non-spatial rank 2.")
+
+
+def test_representation_batch_unbind_rejects_spatial_rank_five_tensor() -> None:
+    batch = RepresentationBatch(
+        tensor=torch.arange(2 * 4 * 2 * 2 * 2, dtype=torch.float32).reshape(2, 4, 2, 2, 2),
+        space="feature",
+        spatial_shape=(2, 2),
+        feature_dim=4,
+        batch_size=2,
+        sample_ids=("sample-0", "sample-1"),
+        requires_grad=False,
+        device="cpu",
+        dtype="torch.float32",
+        provenance=_provenance(),
+    )
+
+    try:
+        batch.unbind()
+    except ValueError as exc:
+        assert "rank 4" in str(exc)
+    else:  # pragma: no cover - defensive branch for the failing pre-fix state
+        raise AssertionError("RepresentationBatch.unbind() should enforce spatial rank 4.")
+
+
 def test_representation_batch_unbind_rejects_metadata_mismatch() -> None:
     batch = RepresentationBatch(
         tensor=torch.arange(2 * 4 * 2 * 2, dtype=torch.float32).reshape(2, 4, 2, 2),
@@ -90,6 +137,10 @@ def test_representation_batch_unbind_rejects_metadata_mismatch() -> None:
         assert "metadata" in str(exc)
     else:  # pragma: no cover - defensive branch for the failing pre-fix state
         raise AssertionError("RepresentationBatch.unbind() should reject inconsistent metadata.")
+
+
+def test_representation_space_is_exported_from_representation_package() -> None:
+    assert get_args(RepresentationSpace) == ("pixel", "feature")
 
 
 def test_representation_output_serializes_provenance_for_artifacts() -> None:

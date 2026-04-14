@@ -83,9 +83,7 @@ class RepresentationBatch:
 
     def unbind(self) -> list[RepresentationOutput]:
         if self.tensor.ndim < 2:
-            raise ValueError(
-                "RepresentationBatch batch tensor must have a batch dimension and at least one feature dimension."
-            )
+            raise ValueError("RepresentationBatch batch tensor must have at least rank 2.")
         if self.tensor.shape[0] != self.batch_size:
             raise ValueError(
                 f"RepresentationBatch batch_size={self.batch_size} does not match tensor batch dimension "
@@ -95,13 +93,18 @@ class RepresentationBatch:
             raise ValueError("RepresentationBatch metadata mismatch: sample_ids length must match batch_size.")
         if self.provenance.representation_name != self.space:
             raise ValueError("RepresentationBatch metadata mismatch: provenance.representation_name must match batch space.")
-        if self.tensor.shape[1] != self.feature_dim:
-            raise ValueError("RepresentationBatch metadata mismatch: feature_dim must match tensor channel dimension.")
         if self.spatial_shape is not None:
-            if self.tensor.ndim < 4:
-                raise ValueError("RepresentationBatch metadata mismatch: spatial_shape requires tensor rank at least 4.")
+            if self.tensor.ndim != 4:
+                raise ValueError("RepresentationBatch tensor must have canonical spatial rank 4.")
+            if self.tensor.shape[1] != self.feature_dim:
+                raise ValueError("RepresentationBatch metadata mismatch: feature_dim must match tensor channel dimension.")
             if tuple(self.tensor.shape[-2:]) != self.spatial_shape:
                 raise ValueError("RepresentationBatch metadata mismatch: spatial_shape must match tensor spatial dimensions.")
+        else:
+            if self.tensor.ndim != 2:
+                raise ValueError("RepresentationBatch tensor must have canonical non-spatial rank 2.")
+            if self.tensor.shape[1] != self.feature_dim:
+                raise ValueError("RepresentationBatch metadata mismatch: feature_dim must match tensor channel dimension.")
         if str(self.tensor.device) != self.device:
             raise ValueError("RepresentationBatch metadata mismatch: device must match tensor.device.")
         if str(self.tensor.dtype) != self.dtype:

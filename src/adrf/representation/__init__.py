@@ -1,5 +1,6 @@
 """Representation models for pixel and feature spaces."""
 
+from adrf.core.typing import RepresentationSpace
 from adrf.representation.base import BaseRepresentation
 from adrf.representation.contracts import RepresentationBatch, RepresentationOutput, RepresentationProvenance
 from adrf.representation.feature import FeatureRepresentation
@@ -12,4 +13,5 @@ __all__ = [
     "RepresentationBatch",
     "RepresentationOutput",
     "RepresentationProvenance",
+    "RepresentationSpace",
 ]
