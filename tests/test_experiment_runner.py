@@ -115,6 +115,62 @@ class _CompatibleToyNormality(nn.Module, BaseNormalityModel):
         raise AssertionError("test does not exercise inference.")
 
 
+class _RecordingJointRepresentation(BaseRepresentation):
+    space = "feature"
+    trainable = True
+
+    def __init__(self) -> None:
+        super().__init__(input_image_size=(32, 32), input_normalize=False)
+        self.scale = nn.Parameter(torch.tensor(1.0))
+        self.encode_batch_calls = 0
+
+    def encode_batch(self, samples) -> object:
+        self.encode_batch_calls += 1
+        return super().encode_batch(samples)
+
+    def _encode_tensor_batch(self, batch: torch.Tensor) -> torch.Tensor:
+        return batch[:, :1, :, :] * self.scale
+
+    def describe(self) -> RepresentationProvenance:
+        return RepresentationProvenance(
+            representation_name="feature",
+            backbone_name="toy-joint",
+            weights_source=None,
+            feature_layer="scale",
+            pooling=None,
+            trainable=True,
+            frozen_submodules=(),
+            input_image_size=self.input_image_size,
+            input_normalize=self.input_normalize,
+            normalize_mean=None,
+            normalize_std=None,
+            code_version="tests",
+            config_fingerprint="runner-recording-joint-feature",
+        )
+
+
+class _JointCompatibleNormality(nn.Module, BaseNormalityModel):
+    fit_mode = "joint"
+    accepted_spaces = frozenset({"feature"})
+    accepted_tensor_ranks = frozenset({3})
+    requires_detached_representation = False
+
+    def configure_joint_training(self, representation_model: nn.Module) -> None:
+        self.configured_with = representation_model
+
+    def fit_batch(self, representations, samples) -> dict[str, float]:
+        del representations, samples
+        return {"loss": 0.0}
+
+    def fit(self, representations, samples=None) -> None:
+        del representations, samples
+        raise AssertionError("joint mode should not call fit().")
+
+    def infer(self, sample, representation):
+        del sample, representation
+        raise AssertionError("test does not exercise inference.")
+
+
 def _write_runner_config(config_path: Path, dataset_root: Path, *, representation_name: str, normality_name: str) -> None:
     config_path.write_text(
         "\n".join(
@@ -253,3 +309,35 @@ def test_experiment_runner_setup_validation_does_not_mutate_trainable_representa
     assert representation.training is True
     assert representation.batch_norm.training is True
     assert int(representation.batch_norm.num_batches_tracked.item()) == before_batches
+
+
+def test_experiment_runner_setup_exercises_runtime_representation_adapter_path(tmp_path: Path) -> None:
+    """ExperimentRunner setup should wire the runtime adapter and preserve batch-first behavior."""
+
+    dataset_root = tmp_path / "mvtec"
+    _write_fixture_dataset(dataset_root)
+    config_path = tmp_path / "joint_adapter.yaml"
+    _write_runner_config(
+        config_path,
+        dataset_root,
+        representation_name="recording_joint_feature",
+        normality_name="joint_compatible",
+    )
+    registry = build_default_registry()
+    registry.register("representation", "recording_joint_feature", _RecordingJointRepresentation)
+    registry.register("normality", "joint_compatible", _JointCompatibleNormality)
+
+    runner = ExperimentRunner(config_path, registry=registry)
+    runner.setup()
+    train_batch = next(iter(runner.datamodule.train_dataloader()))
+    representation_model = runner.representation.representation
+    before_calls = representation_model.encode_batch_calls
+
+    batch = runner.representation.encode_batch(train_batch)
+
+    assert runner.representation.space == "feature"
+    assert runner.representation.trainable is True
+    assert representation_model.encode_batch_calls >= 1
+    assert before_calls >= 1
+    assert batch.batch_size == len(train_batch)
+    assert batch.space == "feature"

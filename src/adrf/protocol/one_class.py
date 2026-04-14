@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from contextlib import contextmanager
 from typing import Any
+
+from torch import nn
 
 from adrf.protocol.base import BaseProtocol
 from adrf.utils.distributed import all_gather_objects
@@ -84,12 +87,16 @@ class OneClassProtocol(BaseProtocol):
 
         runner.evaluator.reset()
         dataloader = runner.datamodule.test_dataloader()
-        for batch in dataloader:
-            batch_representations = runner.representation.encode_batch(batch).unbind()
-            for sample, representation in zip(batch, batch_representations, strict=True):
-                artifacts = runner.normality.infer(sample, representation)
-                prediction = runner.evidence.predict(sample, artifacts)
-                runner.evaluator.update(prediction, sample)
+        with _temporarily_switch_modules_to_eval(
+            getattr(runner.representation, "representation", runner.representation),
+            runner.normality,
+        ):
+            for batch in dataloader:
+                batch_representations = runner.representation.encode_batch(batch).unbind()
+                for sample, representation in zip(batch, batch_representations, strict=True):
+                    artifacts = runner.normality.infer(sample, representation)
+                    prediction = runner.evidence.predict(sample, artifacts)
+                    runner.evaluator.update(prediction, sample)
 
         distributed_context = getattr(runner, "distributed_context", None)
         if (
@@ -101,3 +108,30 @@ class OneClassProtocol(BaseProtocol):
             merged_state = runner.evaluator.merge_states(gathered_states)
             runner.evaluator.load_state_dict(merged_state)
         return runner.evaluator.compute()
+
+
+@contextmanager
+def _temporarily_switch_modules_to_eval(*objects: object):
+    """Run a block with the provided module trees in eval mode, then restore prior state."""
+
+    roots: list[nn.Module] = []
+    for obj in objects:
+        if isinstance(obj, nn.Module) and all(existing is not obj for existing in roots):
+            roots.append(obj)
+
+    if not roots:
+        yield
+        return
+
+    training_states = {
+        module: module.training
+        for root in roots
+        for module in root.modules()
+    }
+    try:
+        for root in roots:
+            root.eval()
+        yield
+    finally:
+        for module, was_training in training_states.items():
+            module.train(was_training)
