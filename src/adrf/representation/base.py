@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
+from typing import Any
 
 import torch
 from torch import nn
@@ -23,6 +24,19 @@ class BaseRepresentation(nn.Module, RepresentationModel, ABC):
         super().__init__()
         self.input_image_size = input_image_size
         self.input_normalize = input_normalize
+
+    def forward(self, sample: Sample) -> dict[str, Any]:
+        """Provide the legacy callable mapping contract used by unmigrated pipeline stages."""
+
+        output = self.encode_sample(sample)
+        payload: dict[str, Any] = {
+            "representation": output.tensor,
+            "space_type": output.space,
+            "spatial_shape": output.spatial_shape,
+        }
+        if output.space == "feature":
+            payload["feature_dim"] = output.feature_dim
+        return payload
 
     def encode_sample(self, sample: Sample) -> RepresentationOutput:
         return self.encode_batch([sample]).unbind()[0]
