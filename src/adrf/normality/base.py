@@ -52,10 +52,13 @@ class BaseNormalityModel(NormalityModel, ABC):
             self.validate_representation_output(representation)
             return representation.tensor
         if isinstance(representation, Mapping):
-            tensor = representation.get("representation")
-            if not isinstance(tensor, torch.Tensor):
-                raise TypeError("Normality models expect representation['representation'] to be a torch.Tensor.")
-            return tensor
+            normalized = self._normalize_legacy_representation(representation)
+            self._validate_representation_metadata(
+                space=str(normalized["space"]),
+                tensor=normalized["tensor"],
+                requires_grad=bool(normalized["requires_grad"]),
+            )
+            return normalized["tensor"]
         raise TypeError(
             f"{type(self).__name__} expects RepresentationOutput or mapping inputs, got {type(representation).__name__}."
         )
@@ -67,7 +70,7 @@ class BaseNormalityModel(NormalityModel, ABC):
         if isinstance(representation, RepresentationOutput):
             return representation.to_artifact_dict()
         if isinstance(representation, Mapping):
-            return dict(representation)
+            return BaseNormalityModel._normalize_legacy_representation(representation)
         raise TypeError(
             f"Normality models expect RepresentationOutput or mapping payloads, got {type(representation).__name__}."
         )
@@ -89,3 +92,41 @@ class BaseNormalityModel(NormalityModel, ABC):
             )
         if self.requires_detached_representation and requires_grad:
             raise ValueError(f"{type(self).__name__} requires detached representations for offline normality.")
+
+    @staticmethod
+    def _normalize_legacy_representation(representation: Mapping[str, Any]) -> dict[str, object]:
+        tensor = representation.get("tensor", representation.get("representation"))
+        if not isinstance(tensor, torch.Tensor):
+            raise TypeError("Normality models expect representation['representation'] to be a torch.Tensor.")
+
+        raw_requires_grad = representation.get("requires_grad")
+        requires_grad = tensor.requires_grad if raw_requires_grad is None else bool(raw_requires_grad) or tensor.requires_grad
+
+        provenance = representation.get("provenance")
+        if hasattr(provenance, "to_dict"):
+            provenance_value = provenance.to_dict()
+        elif isinstance(provenance, Mapping):
+            provenance_value = dict(provenance)
+        else:
+            provenance_value = None
+
+        raw_spatial_shape = representation.get("spatial_shape")
+        spatial_shape = tuple(raw_spatial_shape) if raw_spatial_shape is not None else (tuple(tensor.shape[-2:]) if tensor.ndim == 3 else None)
+
+        raw_feature_dim = representation.get("feature_dim")
+        feature_dim = int(raw_feature_dim) if raw_feature_dim is not None else int(tensor.shape[0])
+
+        raw_space = representation.get("space", representation.get("space_type", representation.get("representation_space")))
+        space = str(raw_space) if raw_space is not None else ""
+
+        return {
+            "tensor": tensor,
+            "space": space,
+            "spatial_shape": spatial_shape,
+            "feature_dim": feature_dim,
+            "sample_id": representation.get("sample_id"),
+            "requires_grad": requires_grad,
+            "device": str(representation.get("device")) if representation.get("device") is not None else str(tensor.device),
+            "dtype": str(representation.get("dtype")) if representation.get("dtype") is not None else str(tensor.dtype),
+            "provenance": provenance_value,
+        }
