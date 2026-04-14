@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from abc import ABC
+from collections.abc import Mapping
+from typing import Any
 
 import torch
 
@@ -43,17 +45,32 @@ class BaseNormalityModel(NormalityModel, ABC):
         for representation in representations.unbind():
             self.validate_representation_output(representation)
 
-    def require_representation_tensor(self, representation: RepresentationOutput) -> torch.Tensor:
-        """Return the validated representation tensor."""
+    def require_representation_tensor(self, representation: RepresentationOutput | Mapping[str, Any]) -> torch.Tensor:
+        """Return the validated typed tensor or fall back to the legacy mapping contract."""
 
-        self.validate_representation_output(representation)
-        return representation.tensor
+        if isinstance(representation, RepresentationOutput):
+            self.validate_representation_output(representation)
+            return representation.tensor
+        if isinstance(representation, Mapping):
+            tensor = representation.get("representation")
+            if not isinstance(tensor, torch.Tensor):
+                raise TypeError("Normality models expect representation['representation'] to be a torch.Tensor.")
+            return tensor
+        raise TypeError(
+            f"{type(self).__name__} expects RepresentationOutput or mapping inputs, got {type(representation).__name__}."
+        )
 
     @staticmethod
-    def serialize_representation(representation: RepresentationOutput) -> dict[str, object]:
-        """Serialize a typed representation payload into artifact-compatible form."""
+    def serialize_representation(representation: RepresentationOutput | Mapping[str, Any]) -> dict[str, object]:
+        """Serialize typed outputs via the contract and preserve legacy mapping payloads."""
 
-        return representation.to_artifact_dict()
+        if isinstance(representation, RepresentationOutput):
+            return representation.to_artifact_dict()
+        if isinstance(representation, Mapping):
+            return dict(representation)
+        raise TypeError(
+            f"Normality models expect RepresentationOutput or mapping payloads, got {type(representation).__name__}."
+        )
 
     def _validate_representation_metadata(
         self,
