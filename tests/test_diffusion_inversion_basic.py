@@ -1,26 +1,25 @@
 """Tests for the minimal process-style diffusion normality model."""
 
+from pathlib import Path
+import sys
+
 import torch
 
 from adrf.core.sample import Sample
 from adrf.normality.diffusion_inversion_basic import DiffusionInversionBasicNormality
 
+sys.path.insert(0, str(Path(__file__).parent))
 
-def _pixel_representation(image: torch.Tensor) -> dict[str, object]:
-    return {
-        "representation": image,
-        "space_type": "pixel",
-        "spatial_shape": tuple(image.shape[-2:]),
-    }
+from support.representation_builders import make_pixel_output
 
 
-def test_diffusion_inversion_basic_emits_trajectory_and_step_costs() -> None:
-    """DiffusionInversionBasicNormality should expose a process trace in artifacts."""
+def test_diffusion_inversion_fit_and_infer_accept_representation_output() -> None:
+    """DiffusionInversionBasicNormality should expose process artifacts for typed pixel outputs."""
 
-    torch.manual_seed(0)
-    train_representations = [
-        _pixel_representation(torch.rand(3, 16, 16)),
-        _pixel_representation(torch.rand(3, 16, 16)),
+    generator = torch.Generator().manual_seed(0)
+    representations = [
+        make_pixel_output(torch.rand(3, 16, 16, generator=generator), sample_id=f"train-{index:03d}")
+        for index in range(2)
     ]
     model = DiffusionInversionBasicNormality(
         input_channels=3,
@@ -35,9 +34,9 @@ def test_diffusion_inversion_basic_emits_trajectory_and_step_costs() -> None:
         step_size=0.1,
     )
 
-    model.fit(train_representations)
-    sample = Sample(image=train_representations[0]["representation"], sample_id="sample-001")
-    artifacts = model.infer(sample, train_representations[0])
+    model.fit(representations)
+    sample = Sample(image=representations[0].tensor, sample_id="query")
+    artifacts = model.infer(sample, representations[0])
 
     assert artifacts.has("trajectory")
     assert artifacts.has("step_costs")
@@ -55,3 +54,8 @@ def test_diffusion_inversion_basic_emits_trajectory_and_step_costs() -> None:
     assert step_costs[0].shape == step_costs[-1].shape == (16, 16)
     assert artifacts.get_diag("time_embed_dim") == 32
     assert artifacts.get_diag("num_train_timesteps") == 32
+    assert artifacts.representation == representations[0].to_artifact_dict()
+    assert artifacts.representation["space"] == "pixel"
+    assert artifacts.representation["sample_id"] == "train-000"
+    assert DiffusionInversionBasicNormality.accepted_spaces == frozenset({"pixel"})
+    assert DiffusionInversionBasicNormality.accepted_tensor_ranks == frozenset({3})

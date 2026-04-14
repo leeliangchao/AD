@@ -1,28 +1,27 @@
 """Smoke tests for legacy and diffusers diffusion backends."""
 
+from pathlib import Path
+import sys
+
 import torch
 
 from adrf.core.sample import Sample
 from adrf.normality.diffusion_basic import DiffusionBasicNormality
 
+sys.path.insert(0, str(Path(__file__).parent))
 
-def _pixel_representation(image: torch.Tensor) -> dict[str, object]:
-    return {
-        "representation": image,
-        "space_type": "pixel",
-        "spatial_shape": tuple(image.shape[-2:]),
-    }
+from support.representation_builders import make_pixel_output
 
 
 def test_diffusion_basic_legacy_and_diffusers_backends_share_artifact_contract() -> None:
     """Both backends should emit the same artifact keys and tensor shapes."""
 
-    torch.manual_seed(0)
+    generator = torch.Generator().manual_seed(0)
     train_representations = [
-        _pixel_representation(torch.rand(3, 16, 16)),
-        _pixel_representation(torch.rand(3, 16, 16)),
+        make_pixel_output(torch.rand(3, 16, 16, generator=generator), sample_id=f"train-{index:03d}")
+        for index in range(2)
     ]
-    sample = Sample(image=train_representations[0]["representation"], sample_id="sample-001")
+    sample = Sample(image=train_representations[0].tensor, sample_id="query")
 
     legacy = DiffusionBasicNormality(
         input_channels=3,
@@ -54,3 +53,5 @@ def test_diffusion_basic_legacy_and_diffusers_backends_share_artifact_contract()
 
     assert legacy_artifacts.get_aux("predicted_noise").shape == diffusers_artifacts.get_aux("predicted_noise").shape
     assert legacy_artifacts.get_aux("target_noise").shape == diffusers_artifacts.get_aux("target_noise").shape
+    assert legacy_artifacts.representation == train_representations[0].to_artifact_dict()
+    assert diffusers_artifacts.representation == train_representations[0].to_artifact_dict()

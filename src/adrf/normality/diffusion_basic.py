@@ -16,6 +16,7 @@ from adrf.core.artifacts import NormalityArtifacts
 from adrf.core.sample import Sample
 from adrf.diffusion.adapters import DiffusersNoisePredictorAdapter
 from adrf.normality.base import BaseNormalityModel
+from adrf.representation.contracts import RepresentationOutput
 
 
 def _normalize_channel_mults(
@@ -173,6 +174,10 @@ class _NoisePredictor(nn.Module):
 class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
     """Train a small denoiser on normal pixel samples and expose noise artifacts."""
 
+    accepted_spaces = frozenset({"pixel"})
+    accepted_tensor_ranks = frozenset({3})
+    requires_detached_representation = True
+
     def __init__(
         self,
         input_channels: int = 3,
@@ -235,7 +240,7 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
 
     def fit(
         self,
-        representations: Iterable[Mapping[str, Any]],
+        representations: Iterable[RepresentationOutput | Mapping[str, Any]],
         samples: Iterable[Sample] | None = None,
     ) -> None:
         """Train the denoiser on normal pixel-space representations."""
@@ -281,7 +286,11 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
                 self.last_fit_loss = float(loss.detach().cpu().item())
         self.eval()
 
-    def infer(self, sample: Sample, representation: Mapping[str, Any]) -> NormalityArtifacts:
+    def infer(
+        self,
+        sample: Sample,
+        representation: RepresentationOutput | Mapping[str, Any],
+    ) -> NormalityArtifacts:
         """Run one single-step noise-prediction pass and emit diffusion artifacts."""
 
         clean_image = self.require_representation_tensor(representation).float().unsqueeze(0)
@@ -300,10 +309,7 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
                 "category": sample.category,
                 "mode": "inference",
             },
-            representation={
-                "space_type": representation.get("space_type"),
-                "spatial_shape": representation.get("spatial_shape"),
-            },
+            representation=self.serialize_representation(representation),
             primary={},
             auxiliary={
                 "predicted_noise": predicted_noise.squeeze(0),

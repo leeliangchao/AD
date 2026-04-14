@@ -11,10 +11,15 @@ import torch
 from adrf.core.artifacts import NormalityArtifacts
 from adrf.core.sample import Sample
 from adrf.normality.diffusion_basic import DiffusionBasicNormality
+from adrf.representation.contracts import RepresentationOutput
 
 
 class DiffusionInversionBasicNormality(DiffusionBasicNormality):
     """Run a finite denoising process and expose the full state trajectory."""
+
+    accepted_spaces = frozenset({"pixel"})
+    accepted_tensor_ranks = frozenset({3})
+    requires_detached_representation = True
 
     def __init__(
         self,
@@ -68,7 +73,11 @@ class DiffusionInversionBasicNormality(DiffusionBasicNormality):
         self.rollout_gain = float(rollout_gain)
         self.denoised_blend = float(denoised_blend)
 
-    def infer(self, sample: Sample, representation: Mapping[str, Any]) -> NormalityArtifacts:
+    def infer(
+        self,
+        sample: Sample,
+        representation: RepresentationOutput | Mapping[str, Any],
+    ) -> NormalityArtifacts:
         """Run a fixed denoising trajectory and expose step-aligned process artifacts."""
 
         current_state = self._initial_state(representation)
@@ -104,10 +113,7 @@ class DiffusionInversionBasicNormality(DiffusionBasicNormality):
                 "category": sample.category,
                 "mode": "inference",
             },
-            representation={
-                "space_type": representation.get("space_type"),
-                "spatial_shape": representation.get("spatial_shape"),
-            },
+            representation=self.serialize_representation(representation),
             primary={},
             auxiliary={
                 "trajectory": trajectory,

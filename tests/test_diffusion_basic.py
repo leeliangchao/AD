@@ -1,26 +1,25 @@
 """Tests for the minimal diffusion-style normality model."""
 
+from pathlib import Path
+import sys
+
 import torch
 
 from adrf.core.sample import Sample
 from adrf.normality.diffusion_basic import DiffusionBasicNormality
 
+sys.path.insert(0, str(Path(__file__).parent))
 
-def _pixel_representation(image: torch.Tensor) -> dict[str, object]:
-    return {
-        "representation": image,
-        "space_type": "pixel",
-        "spatial_shape": tuple(image.shape[-2:]),
-    }
+from support.representation_builders import make_pixel_output
 
 
-def test_diffusion_basic_fit_and_infer_emit_noise_artifacts() -> None:
-    """DiffusionBasicNormality should train on normal pixels and emit noise artifacts."""
+def test_diffusion_basic_fit_and_infer_accept_representation_output() -> None:
+    """DiffusionBasicNormality should train on typed pixel outputs and emit normalized artifacts."""
 
-    torch.manual_seed(0)
-    train_representations = [
-        _pixel_representation(torch.rand(3, 16, 16)),
-        _pixel_representation(torch.rand(3, 16, 16)),
+    generator = torch.Generator().manual_seed(0)
+    representations = [
+        make_pixel_output(torch.rand(3, 16, 16, generator=generator), sample_id=f"train-{index:03d}")
+        for index in range(2)
     ]
     model = DiffusionBasicNormality(
         input_channels=3,
@@ -33,9 +32,9 @@ def test_diffusion_basic_fit_and_infer_emit_noise_artifacts() -> None:
         noise_level=0.2,
     )
 
-    model.fit(train_representations)
-    sample = Sample(image=train_representations[0]["representation"], sample_id="sample-001")
-    artifacts = model.infer(sample, train_representations[0])
+    model.fit(representations)
+    sample = Sample(image=representations[0].tensor, sample_id="query")
+    artifacts = model.infer(sample, representations[0])
 
     assert artifacts.has("predicted_noise")
     assert artifacts.has("target_noise")
@@ -47,3 +46,8 @@ def test_diffusion_basic_fit_and_infer_emit_noise_artifacts() -> None:
     assert predicted_noise.shape == target_noise.shape == (3, 16, 16)
     assert artifacts.get_diag("time_embed_dim") == 32
     assert artifacts.get_diag("num_train_timesteps") == 32
+    assert artifacts.representation == representations[0].to_artifact_dict()
+    assert artifacts.representation["space"] == "pixel"
+    assert artifacts.representation["provenance"]["representation_name"] == "pixel"
+    assert DiffusionBasicNormality.accepted_spaces == frozenset({"pixel"})
+    assert DiffusionBasicNormality.accepted_tensor_ranks == frozenset({3})
