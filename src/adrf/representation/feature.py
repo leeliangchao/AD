@@ -73,11 +73,13 @@ class FeatureRepresentation(BaseRepresentation):
         if weights is _UNSET:
             return "imagenet1k_v1" if pretrained is not False else None
         if pretrained is None:
+            FeatureRepresentation._validate_supported_weights(weights)
             return weights  # type: ignore[return-value]
 
         expected_weights = "imagenet1k_v1" if pretrained else None
         if weights != expected_weights:
             raise ValueError("FeatureRepresentation received conflicting 'weights' and legacy 'pretrained' arguments.")
+        FeatureRepresentation._validate_supported_weights(weights)
         return weights  # type: ignore[return-value]
 
     @staticmethod
@@ -91,3 +93,8 @@ class FeatureRepresentation(BaseRepresentation):
         if bool(trainable) != expected_trainable:
             raise ValueError("FeatureRepresentation received conflicting 'trainable' and legacy 'freeze' arguments.")
         return bool(trainable)
+
+    @staticmethod
+    def _validate_supported_weights(weights: str | None | object) -> None:
+        if weights not in {None, "imagenet1k_v1"}:
+            raise ValueError("FeatureRepresentation received unsupported weights. Supported values: None, 'imagenet1k_v1'.")
