@@ -81,7 +81,10 @@ class RepresentationBatch:
     dtype: str
     provenance: RepresentationProvenance
 
-    def unbind(self) -> list[RepresentationOutput]:
+    def __post_init__(self) -> None:
+        self.validate()
+
+    def validate(self) -> None:
         if self.tensor.ndim < 2:
             raise ValueError("RepresentationBatch batch tensor must have at least rank 2.")
         if self.tensor.shape[0] != self.batch_size:
@@ -111,6 +114,9 @@ class RepresentationBatch:
             raise ValueError("RepresentationBatch metadata mismatch: dtype must match tensor.dtype.")
         if self.tensor.requires_grad != self.requires_grad:
             raise ValueError("RepresentationBatch metadata mismatch: requires_grad must match tensor.requires_grad.")
+
+    def unbind(self) -> list[RepresentationOutput]:
+        self.validate()
         return [
             RepresentationOutput(
                 tensor=self.tensor[index],
