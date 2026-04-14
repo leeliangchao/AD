@@ -48,6 +48,50 @@ def test_representation_batch_unbind_preserves_metadata() -> None:
     assert outputs[0].provenance.representation_name == "feature"
 
 
+def test_representation_batch_unbind_rejects_zero_rank_tensor() -> None:
+    batch = RepresentationBatch(
+        tensor=torch.tensor(1.0),
+        space="feature",
+        spatial_shape=None,
+        feature_dim=1,
+        batch_size=1,
+        sample_ids=("sample-0",),
+        requires_grad=False,
+        device="cpu",
+        dtype="torch.float32",
+        provenance=_provenance(),
+    )
+
+    try:
+        batch.unbind()
+    except ValueError as exc:
+        assert "batch tensor" in str(exc)
+    else:  # pragma: no cover - defensive branch for the failing pre-fix state
+        raise AssertionError("RepresentationBatch.unbind() should reject zero-rank tensors.")
+
+
+def test_representation_batch_unbind_rejects_metadata_mismatch() -> None:
+    batch = RepresentationBatch(
+        tensor=torch.arange(2 * 4 * 2 * 2, dtype=torch.float32).reshape(2, 4, 2, 2),
+        space="feature",
+        spatial_shape=(4, 4),
+        feature_dim=8,
+        batch_size=2,
+        sample_ids=("sample-0", "sample-1"),
+        requires_grad=False,
+        device="cpu",
+        dtype="torch.float32",
+        provenance=_provenance(),
+    )
+
+    try:
+        batch.unbind()
+    except ValueError as exc:
+        assert "metadata" in str(exc)
+    else:  # pragma: no cover - defensive branch for the failing pre-fix state
+        raise AssertionError("RepresentationBatch.unbind() should reject inconsistent metadata.")
+
+
 def test_representation_output_serializes_provenance_for_artifacts() -> None:
     output = RepresentationOutput(
         tensor=torch.ones(4, 2, 2),

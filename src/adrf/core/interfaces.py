@@ -7,6 +7,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Literal
 
 from adrf.core.artifacts import NormalityArtifacts
+from adrf.core.typing import RepresentationSpace
 from adrf.core.sample import Sample
 
 if TYPE_CHECKING:
@@ -22,7 +23,7 @@ class Representation(ABC):
 
 
 class RepresentationModel(ABC):
-    space: str
+    space: RepresentationSpace
     trainable: bool
 
     @abstractmethod
@@ -39,7 +40,7 @@ class RepresentationModel(ABC):
 
 class NormalityModel(ABC):
     fit_mode: Literal["offline", "joint"] = "offline"
-    accepted_spaces: frozenset[str] = frozenset()
+    accepted_spaces: frozenset[RepresentationSpace] = frozenset()
     accepted_tensor_ranks: frozenset[int] = frozenset()
     requires_detached_representation: bool = True
 
