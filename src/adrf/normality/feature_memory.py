@@ -2,25 +2,29 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
-from typing import Any
+from collections.abc import Iterable
 
 import torch
 
 from adrf.core.artifacts import NormalityArtifacts
 from adrf.core.sample import Sample
 from adrf.normality.base import BaseNormalityModel
+from adrf.representation.contracts import RepresentationOutput
 
 
 class FeatureMemoryNormality(BaseNormalityModel):
     """Store normal feature vectors and measure nearest-memory distance at inference."""
+
+    accepted_spaces = frozenset({"feature"})
+    accepted_tensor_ranks = frozenset({1, 3})
+    requires_detached_representation = True
 
     def __init__(self) -> None:
         self.memory_bank: torch.Tensor | None = None
 
     def fit(
         self,
-        representations: Iterable[Mapping[str, Any]],
+        representations: Iterable[RepresentationOutput],
         samples: Iterable[Sample] | None = None,
     ) -> None:
         """Build a memory bank from normal feature representations."""
@@ -34,7 +38,7 @@ class FeatureMemoryNormality(BaseNormalityModel):
             raise ValueError("FeatureMemoryNormality.fit requires at least one representation.")
         self.memory_bank = torch.cat(flattened_batches, dim=0)
 
-    def infer(self, sample: Sample, representation: Mapping[str, Any]) -> NormalityArtifacts:
+    def infer(self, sample: Sample, representation: RepresentationOutput) -> NormalityArtifacts:
         """Infer distances to the learned memory bank and package them as artifacts."""
 
         if self.memory_bank is None:
@@ -51,7 +55,7 @@ class FeatureMemoryNormality(BaseNormalityModel):
 
         return NormalityArtifacts(
             context={"sample_id": sample.sample_id, "category": sample.category},
-            representation=dict(representation),
+            representation=self.serialize_representation(representation),
             primary={"normality_embedding": flattened.mean(dim=0)},
             auxiliary={
                 "feature_response": feature_response,
@@ -77,4 +81,3 @@ class FeatureMemoryNormality(BaseNormalityModel):
             flattened = tensor.permute(1, 2, 0).reshape(height * width, channels)
             return flattened, (height, width)
         raise TypeError("FeatureMemoryNormality expects feature tensors with 1, 2, or 3 dimensions.")
-

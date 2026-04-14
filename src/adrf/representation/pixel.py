@@ -2,22 +2,37 @@
 
 from __future__ import annotations
 
-from typing import Any
+import torch
 
-from adrf.core.sample import Sample
 from adrf.representation.base import BaseRepresentation
+from adrf.representation.contracts import RepresentationProvenance
 
 
 class PixelRepresentation(BaseRepresentation):
     """Expose the transformed image tensor directly as the pixel representation."""
 
-    def __call__(self, sample: Sample) -> dict[str, Any]:
-        """Return the sample image in pixel space."""
+    space = "pixel"
+    trainable = False
 
-        image = self.require_image_tensor(sample)
-        return {
-            "representation": image,
-            "space_type": "pixel",
-            "spatial_shape": tuple(image.shape[-2:]),
-        }
+    def __init__(self, input_image_size: tuple[int, int] = (256, 256), input_normalize: bool = False) -> None:
+        super().__init__(input_image_size=input_image_size, input_normalize=input_normalize)
 
+    def _encode_tensor_batch(self, batch: torch.Tensor) -> torch.Tensor:
+        return batch
+
+    def describe(self) -> RepresentationProvenance:
+        return RepresentationProvenance(
+            representation_name="pixel",
+            backbone_name=None,
+            weights_source=None,
+            feature_layer=None,
+            pooling=None,
+            trainable=False,
+            frozen_submodules=(),
+            input_image_size=self.input_image_size,
+            input_normalize=self.input_normalize,
+            normalize_mean=None,
+            normalize_std=None,
+            code_version="working-tree",
+            config_fingerprint="pixel",
+        )

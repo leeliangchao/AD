@@ -1,26 +1,25 @@
 """Tests for the process artifact contract of DiffusionInversionBasicNormality."""
 
+from pathlib import Path
+import sys
+
 import torch
 
 from adrf.core.sample import Sample
 from adrf.normality.diffusion_inversion_basic import DiffusionInversionBasicNormality
 
+sys.path.insert(0, str(Path(__file__).parent))
 
-def _pixel_representation(image: torch.Tensor) -> dict[str, object]:
-    return {
-        "representation": image,
-        "space_type": "pixel",
-        "spatial_shape": tuple(image.shape[-2:]),
-    }
+from support.representation_builders import make_pixel_output
 
 
 def test_diffusion_inversion_artifacts_preserve_step_aligned_contract() -> None:
     """Trajectory and step_costs should remain step-aligned under the diffusers backend."""
 
-    torch.manual_seed(0)
+    generator = torch.Generator().manual_seed(0)
     train_representations = [
-        _pixel_representation(torch.rand(3, 16, 16)),
-        _pixel_representation(torch.rand(3, 16, 16)),
+        make_pixel_output(torch.rand(3, 16, 16, generator=generator), sample_id=f"train-{index:03d}")
+        for index in range(2)
     ]
     model = DiffusionInversionBasicNormality(
         input_channels=3,
@@ -34,7 +33,7 @@ def test_diffusion_inversion_artifacts_preserve_step_aligned_contract() -> None:
         backend="diffusers",
     )
     model.fit(train_representations)
-    sample = Sample(image=train_representations[0]["representation"], sample_id="sample-001")
+    sample = Sample(image=train_representations[0].tensor, sample_id="query")
     artifacts = model.infer(sample, train_representations[0])
 
     trajectory = artifacts.get_aux("trajectory")
@@ -43,4 +42,4 @@ def test_diffusion_inversion_artifacts_preserve_step_aligned_contract() -> None:
     assert len(trajectory) == len(step_costs) == 4
     assert trajectory[0].shape == trajectory[-1].shape == (3, 16, 16)
     assert step_costs[0].shape == step_costs[-1].shape == (16, 16)
-
+    assert artifacts.representation == train_representations[0].to_artifact_dict()

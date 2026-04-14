@@ -12,8 +12,10 @@ from typing import Any
 
 import numpy as np
 import torch
+from torch import nn
 
 from adrf.checkpoint.io import save_model_checkpoint
+from adrf.core.sample import Sample
 from adrf.data.datamodule import MVTecDataModule
 from adrf.evaluation.evaluator import BasicADEvaluator
 from adrf.evidence.conditional_violation import ConditionalViolationEvidence
@@ -147,6 +149,7 @@ class ExperimentRunner:
             registry=self.registry,
             group="normality",
         )
+        self._validate_representation_normality_contract()
         configure_trainable_runtime(
             self.normality,
             device=self.device,
@@ -170,6 +173,72 @@ class ExperimentRunner:
             registry=self.registry,
             group="protocol",
         )
+
+    def _validate_representation_normality_contract(self) -> None:
+        """Fail fast when representation outputs cannot satisfy the normality model contract."""
+
+        if self.representation is None or self.normality is None:
+            raise RuntimeError("Representation and normality must be instantiated before contract validation.")
+
+        representation_space = getattr(self.representation, "space", None)
+        accepted_spaces = getattr(self.normality, "accepted_spaces", frozenset())
+        if accepted_spaces and representation_space not in accepted_spaces:
+            accepted = ", ".join(f"`{candidate}`" for candidate in sorted(accepted_spaces))
+            raise ValueError(
+                f"{type(self.normality).__name__} requires representation space {accepted}; "
+                f"got `{representation_space}` from {type(getattr(self.representation, 'representation', self.representation)).__name__}."
+            )
+
+        probe_output = self._probe_representation_contract_output()
+        accepted_tensor_ranks = getattr(self.normality, "accepted_tensor_ranks", frozenset())
+        if accepted_tensor_ranks and probe_output.tensor.ndim not in accepted_tensor_ranks:
+            accepted = ", ".join(str(rank) for rank in sorted(accepted_tensor_ranks))
+            raise ValueError(
+                f"{type(self.normality).__name__} requires representation tensor rank in {{{accepted}}}; "
+                f"got {probe_output.tensor.ndim} from {type(getattr(self.representation, 'representation', self.representation)).__name__}."
+            )
+
+        fit_mode = str(getattr(self.normality, "fit_mode", "offline"))
+        if (
+            fit_mode == "offline"
+            and bool(getattr(self.normality, "requires_detached_representation", False))
+            and probe_output.requires_grad
+        ):
+            raise ValueError(
+                f"{type(self.normality).__name__} requires detached representations for offline fit mode, "
+                f"but {type(getattr(self.representation, 'representation', self.representation)).__name__} emits a trainable representation."
+            )
+
+    def _probe_representation_contract_output(self) -> Any:
+        """Inspect one representation output without mutating representation training state."""
+
+        if self.representation is None:
+            raise RuntimeError("Representation must be instantiated before probing its contract.")
+
+        representation_model = getattr(self.representation, "representation", self.representation)
+        if not isinstance(representation_model, nn.Module):
+            return self.representation.encode_batch(self._make_contract_probe_batch()).unbind()[0]
+
+        training_states = {module: module.training for module in representation_model.modules()}
+        try:
+            representation_model.eval()
+            return self.representation.encode_batch(self._make_contract_probe_batch()).unbind()[0]
+        finally:
+            for module, was_training in training_states.items():
+                module.train(was_training)
+
+    def _make_contract_probe_batch(self) -> list[Sample]:
+        """Create lightweight samples for representation/normality compatibility checks."""
+
+        image_size = getattr(self.representation, "input_image_size", None)
+        if not isinstance(image_size, tuple) or len(image_size) != 2:
+            image_size_cfg = self.config.get("datamodule", {}).get("params", {}).get("image_size", (32, 32))
+            image_size = tuple(int(size) for size in image_size_cfg)
+        height, width = int(image_size[0]), int(image_size[1])
+        return [
+            Sample(image=torch.zeros(3, height, width), sample_id="__adrf_contract_probe__0"),
+            Sample(image=torch.zeros(3, height, width), sample_id="__adrf_contract_probe__1"),
+        ]
 
     def train(self) -> dict[str, Any]:
         """Run the training stage through the configured protocol."""
@@ -318,21 +387,32 @@ class ExperimentRunner:
                 for key in ("datamodule", "representation", "normality", "evidence", "protocol", "evaluator")
                 if key in self.config and isinstance(self.config[key], Mapping) and "name" in self.config[key]
             },
+            "representation": {
+                "trainable": bool(getattr(self.representation, "trainable", False)),
+                "provenance": self._representation_provenance_payload(),
+            },
         }
         for logger in self.loggers:
             logger.start_run(self.run_name, self.config, run_info=run_info)
         self.run_dir = self.logger.resolve_artifact_path("run_info.json").parent
 
     def _save_checkpoint_if_supported(self) -> None:
-        """Persist a minimal checkpoint for trainable normality models."""
+        """Persist checkpoints for trainable normality/representation modules."""
 
         if self.run_dir is None or self.logger is None or not self.distributed_context.is_primary:
             return
 
-        checkpoint_path = self.logger.resolve_artifact_path("checkpoints/normality.pt")
-        if save_model_checkpoint(self.normality, checkpoint_path):
-            for logger in self.loggers:
-                logger.log_artifact(checkpoint_path, artifact_type="checkpoint")
+        checkpoint_targets = {
+            "normality.pt": self.normality,
+            "representation.pt": self.representation,
+        }
+        for filename, model in checkpoint_targets.items():
+            if not self._supports_trainable_checkpoint(model):
+                continue
+            checkpoint_path = self.logger.resolve_artifact_path(f"checkpoints/{filename}")
+            if save_model_checkpoint(model, checkpoint_path):
+                for logger in self.loggers:
+                    logger.log_artifact(checkpoint_path, artifact_type="checkpoint")
 
     def _derive_run_name(self) -> str:
         """Derive a stable run name from config metadata."""
@@ -389,6 +469,32 @@ class ExperimentRunner:
 
         for logger in self.loggers:
             logger.log_run_info(updates)
+
+    def _representation_provenance_payload(self) -> dict[str, Any] | None:
+        """Serialize representation provenance for run metadata when available."""
+
+        if self.representation is None:
+            return None
+
+        describe = getattr(self.representation, "describe", None)
+        if not callable(describe):
+            return None
+
+        provenance = describe()
+        if hasattr(provenance, "to_dict"):
+            return provenance.to_dict()
+        if isinstance(provenance, Mapping):
+            return dict(provenance)
+        return None
+
+    @staticmethod
+    def _supports_trainable_checkpoint(model: object) -> bool:
+        """Return whether a model exposes at least one trainable parameter for checkpointing."""
+
+        resolved_model = getattr(model, "representation", model)
+        if not isinstance(resolved_model, nn.Module):
+            return False
+        return any(parameter.requires_grad for parameter in resolved_model.parameters())
 
     def _finish_loggers(self, status: str) -> None:
         """Fan out run finalization to all configured loggers."""

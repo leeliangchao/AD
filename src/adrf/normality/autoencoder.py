@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
-from typing import Sequence
+from collections.abc import Iterable
 from typing import Any
+from typing import Sequence
 
 import torch
 import torch.nn.functional as functional
@@ -14,6 +14,7 @@ from adrf.core.artifacts import NormalityArtifacts
 from adrf.core.sample import Sample
 from adrf.normality.diffusion_basic import _normalize_channel_mults
 from adrf.normality.base import BaseNormalityModel
+from adrf.representation.contracts import RepresentationOutput
 
 
 class _ConvStack(nn.Module):
@@ -42,6 +43,10 @@ class _ConvStack(nn.Module):
 
 class AutoEncoderNormality(nn.Module, BaseNormalityModel):
     """Train a small convolutional autoencoder on normal pixel representations."""
+
+    accepted_spaces = frozenset({"pixel"})
+    accepted_tensor_ranks = frozenset({3})
+    requires_detached_representation = True
 
     def __init__(
         self,
@@ -98,7 +103,7 @@ class AutoEncoderNormality(nn.Module, BaseNormalityModel):
 
     def fit(
         self,
-        representations: Iterable[Mapping[str, Any]],
+        representations: Iterable[RepresentationOutput],
         samples: Iterable[Sample] | None = None,
     ) -> None:
         """Train the autoencoder on pixel-space representations."""
@@ -125,7 +130,7 @@ class AutoEncoderNormality(nn.Module, BaseNormalityModel):
                 self.last_fit_loss = float(loss.detach().cpu().item())
         self.eval()
 
-    def infer(self, sample: Sample, representation: Mapping[str, Any]) -> NormalityArtifacts:
+    def infer(self, sample: Sample, representation: RepresentationOutput) -> NormalityArtifacts:
         """Run the trained autoencoder and emit projection/reconstruction artifacts."""
 
         image = self.require_representation_tensor(representation).float().unsqueeze(0)
@@ -133,7 +138,7 @@ class AutoEncoderNormality(nn.Module, BaseNormalityModel):
             projection, reconstruction = self._forward_impl(image)
         return NormalityArtifacts(
             context={"sample_id": sample.sample_id, "category": sample.category},
-            representation=dict(representation),
+            representation=self.serialize_representation(representation),
             primary={
                 "projection": projection.squeeze(0),
                 "reconstruction": reconstruction.squeeze(0),

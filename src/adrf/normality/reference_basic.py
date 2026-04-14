@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 from typing import Sequence
-from typing import Any
 
 import torch
 import torch.nn.functional as functional
@@ -17,6 +16,7 @@ from adrf.core.artifacts import NormalityArtifacts
 from adrf.core.sample import Sample
 from adrf.normality.diffusion_basic import _ResidualConvBlock, _normalize_channel_mults
 from adrf.normality.base import BaseNormalityModel
+from adrf.representation.contracts import RepresentationOutput
 
 
 class _ConditionalProjector(nn.Module):
@@ -62,6 +62,10 @@ class _ConditionalProjector(nn.Module):
 class ReferenceBasicNormality(nn.Module, BaseNormalityModel):
     """Learn a minimal reference-conditioned projection in pixel space."""
 
+    accepted_spaces = frozenset({"pixel"})
+    accepted_tensor_ranks = frozenset({3})
+    requires_detached_representation = True
+
     def __init__(
         self,
         input_channels: int = 3,
@@ -105,7 +109,7 @@ class ReferenceBasicNormality(nn.Module, BaseNormalityModel):
 
     def fit(
         self,
-        representations: Iterable[Mapping[str, Any]],
+        representations: Iterable[RepresentationOutput],
         samples: Iterable[Sample] | None = None,
     ) -> None:
         """Train the conditional model to reconstruct normal images given a reference."""
@@ -144,7 +148,11 @@ class ReferenceBasicNormality(nn.Module, BaseNormalityModel):
                 self.last_fit_loss = float(loss.detach().cpu().item())
         self.eval()
 
-    def infer(self, sample: Sample, representation: Mapping[str, Any]) -> NormalityArtifacts:
+    def infer(
+        self,
+        sample: Sample,
+        representation: RepresentationOutput,
+    ) -> NormalityArtifacts:
         """Infer a minimal conditional projection and alignment response."""
 
         image = self.require_representation_tensor(representation).float()
@@ -161,10 +169,7 @@ class ReferenceBasicNormality(nn.Module, BaseNormalityModel):
                 "has_reference": sample.has_reference(),
                 "mode": "inference",
             },
-            representation={
-                "space_type": representation.get("space_type"),
-                "spatial_shape": representation.get("spatial_shape"),
-            },
+            representation=self.serialize_representation(representation),
             primary={"reference_projection": reference_projection},
             auxiliary={"conditional_alignment": conditional_alignment},
             diagnostics={"fit_loss": self.last_fit_loss},
@@ -174,7 +179,7 @@ class ReferenceBasicNormality(nn.Module, BaseNormalityModel):
     def _prepare_reference_tensor(
         self,
         sample: Sample,
-        representation: Mapping[str, Any],
+        representation: RepresentationOutput,
     ) -> torch.Tensor:
         """Convert the sample reference into a tensor aligned with the image representation."""
 

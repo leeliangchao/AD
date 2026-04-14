@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 
 import torch
 
@@ -15,14 +16,9 @@ from adrf.utils.config import load_yaml_config
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(Path(__file__).parent))
 
-
-def _pixel_representation(image: torch.Tensor) -> dict[str, object]:
-    return {
-        "representation": image,
-        "space_type": "pixel",
-        "spatial_shape": tuple(image.shape[-2:]),
-    }
+from support.representation_builders import make_pixel_output
 
 
 def test_diffusion_rescue_configs_expose_explicit_conditioning_and_process_params() -> None:
@@ -64,10 +60,10 @@ def test_diffusion_rescue_configs_expose_explicit_conditioning_and_process_param
 def test_diffusion_basic_rescue_preserves_noise_artifact_contract() -> None:
     """The rescued diffusion basic model should keep noise artifact semantics unchanged."""
 
-    torch.manual_seed(0)
+    generator = torch.Generator().manual_seed(0)
     representations = [
-        _pixel_representation(torch.rand(3, 16, 16)),
-        _pixel_representation(torch.rand(3, 16, 16)),
+        make_pixel_output(torch.rand(3, 16, 16, generator=generator), sample_id=f"train-{index:03d}")
+        for index in range(2)
     ]
     model = DiffusionBasicNormality(
         input_channels=3,
@@ -84,23 +80,24 @@ def test_diffusion_basic_rescue_preserves_noise_artifact_contract() -> None:
     )
 
     model.fit(representations)
-    artifacts = model.infer(Sample(image=representations[0]["representation"], sample_id="diff-basic"), representations[0])
+    artifacts = model.infer(Sample(image=representations[0].tensor, sample_id="diff-basic"), representations[0])
 
     assert artifacts.capabilities == {"predicted_noise", "target_noise"}
     assert artifacts.get_aux("predicted_noise").shape == (3, 16, 16)
     assert artifacts.get_aux("target_noise").shape == (3, 16, 16)
     assert artifacts.get_diag("conditioning_hidden_dim") == 96
+    assert artifacts.representation == representations[0].to_artifact_dict()
 
 
 def test_diffusion_inversion_rescue_preserves_process_artifact_contract_and_evidence_reuse() -> None:
     """The rescued inversion model should keep process artifacts consumable by process evidence."""
 
-    torch.manual_seed(0)
+    generator = torch.Generator().manual_seed(0)
     representations = [
-        _pixel_representation(torch.rand(3, 16, 16)),
-        _pixel_representation(torch.rand(3, 16, 16)),
+        make_pixel_output(torch.rand(3, 16, 16, generator=generator), sample_id=f"train-{index:03d}")
+        for index in range(2)
     ]
-    sample = Sample(image=representations[0]["representation"], sample_id="diff-process")
+    sample = Sample(image=representations[0].tensor, sample_id="diff-process")
     model = DiffusionInversionBasicNormality(
         input_channels=3,
         base_channels=12,
@@ -132,6 +129,7 @@ def test_diffusion_inversion_rescue_preserves_process_artifact_contract_and_evid
     assert artifacts.get_diag("conditioning_hidden_dim") == 96
     assert artifacts.get_diag("rollout_gain") == 1.1
     assert artifacts.get_diag("denoised_blend") == 0.2
+    assert artifacts.representation == representations[0].to_artifact_dict()
 
     path_prediction = PathCostEvidence(aggregator="mean").predict(sample, artifacts)
     direction_prediction = DirectionMismatchEvidence(aggregator="mean", direction_reduce="sum").predict(sample, artifacts)

@@ -68,7 +68,7 @@
 - `diffusion_inversion_basic`：固定步数轨迹回放 + step cost，不是成熟的过程级扩散异常检测实现，见 `src/adrf/normality/diffusion_inversion_basic.py:15-104`。
 - `reference_basic`：图像与 reference 直接拼接的最小条件模型，见 `src/adrf/normality/reference_basic.py:20-151`。
 - `reference_diffusion_basic`：reference 条件噪声预测的最小版，见 `src/adrf/normality/reference_diffusion_basic.py:20-177`。
-- `feature` 表征默认使用 `pretrained: false`、`freeze: true`，见 `configs/experiment/feature_baseline.yaml:11-15` 与 `src/adrf/representation/feature.py:18-39`，因此它更像“通路成立”而非“强表征基线”。
+- `feature` 表征现在默认使用冻结的预训练 ResNet-18，即 `weights: imagenet1k_v1`、`trainable: false`、`input_image_size: [64, 64]`、`input_normalize: false`，见 `configs/experiment/feature_baseline.yaml:11-16` 与 `src/adrf/representation/feature.py`，因此它不再是“随机冻结通路”，而是一个明确语义的冻结预训练特征基线。
 - 默认 experiment configs 全是开发/烟雾级预算：fixture 数据、`1 epoch`、小图输入，见 `configs/experiment/recon_baseline.yaml:15-23`、`configs/experiment/diffusion_baseline.yaml:15-24`、`configs/experiment/reference_baseline.yaml:16-23`、`configs/experiment/reference_diffusion_baseline.yaml:16-24`。
 
 ### D. 当前结果为什么还不足以正式拍板研究主线

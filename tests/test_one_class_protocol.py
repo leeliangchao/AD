@@ -17,6 +17,19 @@ from adrf.representation.feature import FeatureRepresentation
 from adrf.representation.pixel import PixelRepresentation
 
 
+class _BatchOnlyFeatureRepresentation(FeatureRepresentation):
+    def __init__(self) -> None:
+        super().__init__(pretrained=False, freeze=True, input_image_size=(64, 64), input_normalize=False)
+        self.encode_batch_calls: list[tuple[str | None, ...]] = []
+
+    def encode_batch(self, samples):
+        self.encode_batch_calls.append(tuple(sample.sample_id for sample in samples))
+        return super().encode_batch(samples)
+
+    def encode_sample(self, sample):
+        raise AssertionError(f"Protocol should use encode_batch(), not encode_sample() for {sample.sample_id}.")
+
+
 def _write_rgb_image(path: Path, color: tuple[int, int, int]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     Image.new("RGB", (32, 32), color=color).save(path)
@@ -42,6 +55,7 @@ def test_one_class_protocol_runs_feature_baseline(tmp_path: Path) -> None:
 
     torch.manual_seed(0)
     root = _build_fixture_root(tmp_path)
+    representation = _BatchOnlyFeatureRepresentation()
     runner = SimpleNamespace(
         datamodule=MVTecDataModule(
             root=root,
@@ -51,7 +65,7 @@ def test_one_class_protocol_runs_feature_baseline(tmp_path: Path) -> None:
             num_workers=0,
             normalize=False,
         ),
-        representation=FeatureRepresentation(pretrained=False, freeze=True),
+        representation=representation,
         normality=FeatureMemoryNormality(),
         evidence=FeatureDistanceEvidence(),
         evaluator=BasicADEvaluator(),
@@ -62,6 +76,9 @@ def test_one_class_protocol_runs_feature_baseline(tmp_path: Path) -> None:
     metrics = protocol.evaluate(runner)
 
     assert train_summary["num_train_samples"] == 2
+    assert train_summary["num_train_batches"] == 1
+    assert len(representation.encode_batch_calls) == 2
+    assert all(len(sample_ids) == 2 for sample_ids in representation.encode_batch_calls)
     assert set(metrics) == {"image_auroc", "pixel_auroc", "pixel_aupr"}
 
 
@@ -97,4 +114,3 @@ def test_one_class_protocol_runs_reconstruction_baseline(tmp_path: Path) -> None
 
     assert train_summary["num_train_samples"] == 2
     assert set(metrics) == {"image_auroc", "pixel_auroc", "pixel_aupr"}
-

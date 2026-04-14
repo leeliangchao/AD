@@ -25,6 +25,7 @@ The official contract fixes the comparison scope to:
 | dataloader.batch_size | `32` |
 | optimization.lr | `1.0e-4` |
 | dataset.image_size | `[256, 256]` |
+| feature execution semantics | when the compact paper-schema path resolves `representation_map` to `feature`, it uses a frozen pretrained ResNet-18 with `weights=imagenet1k_v1`, `trainable=false`, and derives `input_image_size` / `input_normalize` from the effective dataset settings (which evaluate to `[256, 256]` / `false` for the official run) |
 | diffusion.num_steps | `10` |
 | normality.backend | `legacy` |
 | fixed metrics | `image_auroc`, `pixel_auroc`, `pixel_aupr`, `train_time`, `total_time` |
@@ -50,6 +51,7 @@ These fields are part of the official comparison contract:
 - Normality family set
 - Evidence family set
 - `representation_map`
+- The compact paper-schema execution rule that resolves `representation_map: feature` to the built-in frozen pretrained feature baseline, with `input_*` inherited from the effective dataset settings
 - `compatibility`
 - `protocol`
 - `evaluation`
@@ -77,4 +79,4 @@ These are not claim-bearing by themselves:
 
 ## Practical Reading
 
-Use the official contract to decide what comparison is allowed to support a research claim. Use filled configs only to supply stronger baseline implementations while preserving the same comparison boundary.
+Use the official contract to decide what comparison is allowed to support a research claim. Read the feature baseline semantics as part of the executable compact paper-schema path, not as fields that must appear expanded inline inside `paper_baseline_matrix_official_v1.yaml`. Use filled configs only to supply stronger baseline implementations while preserving the same comparison boundary.

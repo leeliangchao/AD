@@ -1,5 +1,8 @@
 """Process evidence smoke tests for legacy and diffusers inversion backends."""
 
+from pathlib import Path
+import sys
+
 import torch
 
 from adrf.core.sample import Sample
@@ -7,24 +10,20 @@ from adrf.evidence.direction_mismatch import DirectionMismatchEvidence
 from adrf.evidence.path_cost import PathCostEvidence
 from adrf.normality.diffusion_inversion_basic import DiffusionInversionBasicNormality
 
+sys.path.insert(0, str(Path(__file__).parent))
 
-def _pixel_representation(image: torch.Tensor) -> dict[str, object]:
-    return {
-        "representation": image,
-        "space_type": "pixel",
-        "spatial_shape": tuple(image.shape[-2:]),
-    }
+from support.representation_builders import make_pixel_output
 
 
 def test_process_evidence_reuses_legacy_and_diffusers_inversion_artifacts() -> None:
     """PathCostEvidence and DirectionMismatchEvidence should work on both inversion backends."""
 
-    torch.manual_seed(0)
+    generator = torch.Generator().manual_seed(0)
     train_representations = [
-        _pixel_representation(torch.rand(3, 16, 16)),
-        _pixel_representation(torch.rand(3, 16, 16)),
+        make_pixel_output(torch.rand(3, 16, 16, generator=generator), sample_id=f"train-{index:03d}")
+        for index in range(2)
     ]
-    sample = Sample(image=train_representations[0]["representation"], sample_id="sample-001")
+    sample = Sample(image=train_representations[0].tensor, sample_id="query")
 
     for backend in ("legacy", "diffusers"):
         model = DiffusionInversionBasicNormality(
@@ -45,3 +44,4 @@ def test_process_evidence_reuses_legacy_and_diffusers_inversion_artifacts() -> N
 
         assert "anomaly_map" in path_prediction and "image_score" in path_prediction
         assert "anomaly_map" in direction_prediction and "image_score" in direction_prediction
+        assert artifacts.representation == train_representations[0].to_artifact_dict()

@@ -11,8 +11,10 @@ datamodule:
 representation:
   name: feature
   params:
-    pretrained: false
-    freeze: true
+    weights: imagenet1k_v1
+    trainable: false
+    input_image_size: [64, 64]
+    input_normalize: false
 
 normality:
   name: feature_memory
@@ -30,4 +32,3 @@ evaluator:
 protocol:
   name: one_class
   params: {}
-

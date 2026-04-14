@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 from typing import Sequence
-from typing import Any
 
 import torch
 import torch.nn.functional as functional
@@ -21,6 +20,7 @@ from adrf.normality.diffusion_basic import (
     _sinusoidal_timestep_embedding,
 )
 from adrf.normality.base import BaseNormalityModel
+from adrf.representation.contracts import RepresentationOutput
 
 
 class _ConditionedDenoiser(nn.Module):
@@ -76,6 +76,10 @@ class _ConditionedDenoiser(nn.Module):
 class ReferenceDiffusionBasicNormality(nn.Module, BaseNormalityModel):
     """Predict diffusion noise under a fixed per-category reference condition."""
 
+    accepted_spaces = frozenset({"pixel"})
+    accepted_tensor_ranks = frozenset({3})
+    requires_detached_representation = True
+
     def __init__(
         self,
         input_channels: int = 3,
@@ -130,7 +134,7 @@ class ReferenceDiffusionBasicNormality(nn.Module, BaseNormalityModel):
 
     def fit(
         self,
-        representations: Iterable[Mapping[str, Any]],
+        representations: Iterable[RepresentationOutput],
         samples: Iterable[Sample] | None = None,
     ) -> None:
         """Train a reference-conditioned denoiser on normal pixel samples."""
@@ -170,7 +174,11 @@ class ReferenceDiffusionBasicNormality(nn.Module, BaseNormalityModel):
                 self.last_fit_loss = float(loss.detach().cpu().item())
         self.eval()
 
-    def infer(self, sample: Sample, representation: Mapping[str, Any]) -> NormalityArtifacts:
+    def infer(
+        self,
+        sample: Sample,
+        representation: RepresentationOutput,
+    ) -> NormalityArtifacts:
         """Infer conditional diffusion artifacts for one sample."""
 
         clean_image = self.require_representation_tensor(representation).float().unsqueeze(0)
@@ -190,10 +198,7 @@ class ReferenceDiffusionBasicNormality(nn.Module, BaseNormalityModel):
                 "has_reference": sample.has_reference(),
                 "mode": "inference",
             },
-            representation={
-                "space_type": representation.get("space_type"),
-                "spatial_shape": representation.get("spatial_shape"),
-            },
+            representation=self.serialize_representation(representation),
             primary={"reference_projection": reference_projection.squeeze(0)},
             auxiliary={
                 "predicted_noise": predicted_noise.squeeze(0),
@@ -262,7 +267,7 @@ class ReferenceDiffusionBasicNormality(nn.Module, BaseNormalityModel):
     def _prepare_reference_tensor(
         self,
         sample: Sample,
-        representation: Mapping[str, Any],
+        representation: RepresentationOutput,
     ) -> torch.Tensor:
         """Convert the sample reference into a tensor aligned with the image representation."""
 
