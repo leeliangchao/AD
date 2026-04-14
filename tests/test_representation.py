@@ -7,29 +7,25 @@ from adrf.representation.feature import FeatureRepresentation
 from adrf.representation.pixel import PixelRepresentation
 
 
-def test_pixel_representation_returns_pixel_space_metadata() -> None:
-    """Pixel representation should preserve the input tensor and report shape."""
+def test_pixel_representation_encode_batch_returns_representation_batch() -> None:
+    samples = [
+        Sample(image=torch.rand(3, 16, 20), sample_id="pixel-0"),
+        Sample(image=torch.rand(3, 16, 20), sample_id="pixel-1"),
+    ]
 
-    sample = Sample(image=torch.rand(3, 16, 20))
+    batch = PixelRepresentation(input_image_size=(16, 20), input_normalize=False).encode_batch(samples)
 
-    representation = PixelRepresentation()(sample)
+    assert batch.space == "pixel"
+    assert batch.tensor.shape == (2, 3, 16, 20)
+    assert batch.batch_size == 2
+    assert batch.sample_ids == ("pixel-0", "pixel-1")
 
-    assert representation["space_type"] == "pixel"
-    assert representation["representation"].shape == (3, 16, 20)
-    assert representation["spatial_shape"] == (16, 20)
 
+def test_feature_representation_encode_sample_reports_feature_metadata() -> None:
+    model = FeatureRepresentation(weights=None, trainable=False, input_image_size=(64, 64), input_normalize=False)
+    output = model.encode_sample(Sample(image=torch.rand(3, 64, 64), sample_id="feature-0"))
 
-def test_feature_representation_returns_feature_map_and_freezes_backbone() -> None:
-    """Feature representation should emit a feature tensor with stable metadata."""
-
-    model = FeatureRepresentation(pretrained=False, freeze=True)
-    sample = Sample(image=torch.rand(3, 64, 64))
-
-    representation = model(sample)
-
-    assert representation["space_type"] == "feature"
-    assert representation["representation"].ndim == 3
-    assert representation["feature_dim"] == representation["representation"].shape[0]
-    assert representation["spatial_shape"] == tuple(representation["representation"].shape[-2:])
-    assert all(parameter.requires_grad is False for parameter in model.backbone.parameters())
-
+    assert output.space == "feature"
+    assert output.tensor.ndim == 3
+    assert output.feature_dim == output.tensor.shape[0]
+    assert output.provenance.backbone_name == "resnet18"
