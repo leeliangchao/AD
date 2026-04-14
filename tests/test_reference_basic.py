@@ -1,5 +1,6 @@
 """Tests for the minimal reference-conditioned normality model."""
 
+from PIL import Image
 import torch
 
 from adrf.core.sample import Sample
@@ -45,3 +46,26 @@ def test_reference_basic_fit_and_infer_emit_conditional_artifacts() -> None:
     assert reference_projection.shape == samples[0].image.shape
     assert conditional_alignment.shape == samples[0].image.shape[-2:]
 
+
+def test_reference_basic_accepts_pil_reference_fallback() -> None:
+    """ReferenceBasicNormality should keep working with raw PIL references."""
+
+    torch.manual_seed(0)
+    sample = Sample(
+        image=torch.rand(3, 16, 16),
+        reference=Image.new("RGB", (12, 10), color=(0, 255, 0)),
+        sample_id="sample-pil",
+    )
+    representation = _pixel_representation(sample.image)
+    model = ReferenceBasicNormality(
+        input_channels=3,
+        hidden_channels=8,
+        learning_rate=1e-3,
+        epochs=1,
+        batch_size=1,
+    )
+
+    model.fit([representation], [sample])
+    artifacts = model.infer(sample, representation)
+
+    assert artifacts.get_primary("reference_projection").shape == (3, 16, 16)

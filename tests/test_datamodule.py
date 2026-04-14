@@ -46,5 +46,6 @@ def test_datamodule_builds_train_and_test_dataloaders(tmp_path: Path) -> None:
     assert all(isinstance(sample, Sample) for sample in train_batch)
     assert all(isinstance(sample.image, torch.Tensor) for sample in train_batch)
     assert train_batch[0].image.shape == (3, 16, 16)
+    assert all(isinstance(sample.reference, torch.Tensor) for sample in train_batch)
+    assert train_batch[0].reference.shape == (3, 16, 16)
     assert len(test_batch) == 2
-
