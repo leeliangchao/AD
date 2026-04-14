@@ -27,8 +27,10 @@ representations:
   feature:
     name: feature
     params:
-      pretrained: false
-      freeze: true
+      weights: imagenet1k_v1
+      trainable: false
+      input_image_size: [32, 32]
+      input_normalize: false
 
 normality:
   feature_memory:
@@ -166,4 +168,3 @@ compatibility:
       - pixel
     reference_diffusion_basic:
       - pixel
-

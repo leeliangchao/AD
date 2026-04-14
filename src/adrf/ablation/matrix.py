@@ -314,7 +314,15 @@ class AblationMatrix:
         return {
             "representations": {
                 "pixel": {"name": "pixel", "params": {}},
-                "feature": {"name": "feature", "params": {"pretrained": False, "freeze": True}},
+                "feature": {
+                    "name": "feature",
+                    "params": {
+                        "weights": "imagenet1k_v1",
+                        "trainable": False,
+                        "input_image_size": (256, 256),
+                        "input_normalize": False,
+                    },
+                },
             },
             "normality": {
                 "feature_memory": {"name": "feature_memory", "params": {}},

@@ -387,21 +387,32 @@ class ExperimentRunner:
                 for key in ("datamodule", "representation", "normality", "evidence", "protocol", "evaluator")
                 if key in self.config and isinstance(self.config[key], Mapping) and "name" in self.config[key]
             },
+            "representation": {
+                "trainable": bool(getattr(self.representation, "trainable", False)),
+                "provenance": self._representation_provenance_payload(),
+            },
         }
         for logger in self.loggers:
             logger.start_run(self.run_name, self.config, run_info=run_info)
         self.run_dir = self.logger.resolve_artifact_path("run_info.json").parent
 
     def _save_checkpoint_if_supported(self) -> None:
-        """Persist a minimal checkpoint for trainable normality models."""
+        """Persist checkpoints for trainable normality/representation modules."""
 
         if self.run_dir is None or self.logger is None or not self.distributed_context.is_primary:
             return
 
-        checkpoint_path = self.logger.resolve_artifact_path("checkpoints/normality.pt")
-        if save_model_checkpoint(self.normality, checkpoint_path):
-            for logger in self.loggers:
-                logger.log_artifact(checkpoint_path, artifact_type="checkpoint")
+        checkpoint_targets = {
+            "normality.pt": self.normality,
+            "representation.pt": self.representation,
+        }
+        for filename, model in checkpoint_targets.items():
+            if not self._supports_trainable_checkpoint(model):
+                continue
+            checkpoint_path = self.logger.resolve_artifact_path(f"checkpoints/{filename}")
+            if save_model_checkpoint(model, checkpoint_path):
+                for logger in self.loggers:
+                    logger.log_artifact(checkpoint_path, artifact_type="checkpoint")
 
     def _derive_run_name(self) -> str:
         """Derive a stable run name from config metadata."""
@@ -458,6 +469,32 @@ class ExperimentRunner:
 
         for logger in self.loggers:
             logger.log_run_info(updates)
+
+    def _representation_provenance_payload(self) -> dict[str, Any] | None:
+        """Serialize representation provenance for run metadata when available."""
+
+        if self.representation is None:
+            return None
+
+        describe = getattr(self.representation, "describe", None)
+        if not callable(describe):
+            return None
+
+        provenance = describe()
+        if hasattr(provenance, "to_dict"):
+            return provenance.to_dict()
+        if isinstance(provenance, Mapping):
+            return dict(provenance)
+        return None
+
+    @staticmethod
+    def _supports_trainable_checkpoint(model: object) -> bool:
+        """Return whether a model exposes at least one trainable parameter for checkpointing."""
+
+        resolved_model = getattr(model, "representation", model)
+        if not isinstance(resolved_model, nn.Module):
+            return False
+        return any(parameter.requires_grad for parameter in resolved_model.parameters())
 
     def _finish_loggers(self, status: str) -> None:
         """Fan out run finalization to all configured loggers."""

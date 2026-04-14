@@ -25,6 +25,7 @@ The official contract fixes the comparison scope to:
 | dataloader.batch_size | `32` |
 | optimization.lr | `1.0e-4` |
 | dataset.image_size | `[256, 256]` |
+| feature representation | frozen ResNet-18 with `weights=imagenet1k_v1`, `trainable=false`, `input_image_size=[256, 256]`, `input_normalize=false` |
 | diffusion.num_steps | `10` |
 | normality.backend | `legacy` |
 | fixed metrics | `image_auroc`, `pixel_auroc`, `pixel_aupr`, `train_time`, `total_time` |
@@ -50,6 +51,7 @@ These fields are part of the official comparison contract:
 - Normality family set
 - Evidence family set
 - `representation_map`
+- The frozen pretrained feature baseline semantics used when `representation_map` selects `feature`
 - `compatibility`
 - `protocol`
 - `evaluation`
