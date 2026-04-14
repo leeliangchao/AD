@@ -1,29 +1,32 @@
 """Tests for the minimal reference-conditioned diffusion normality model."""
 
+from pathlib import Path
+import sys
+
 from PIL import Image
 import torch
 
 from adrf.core.sample import Sample
 from adrf.normality.reference_diffusion_basic import ReferenceDiffusionBasicNormality
 
+sys.path.insert(0, str(Path(__file__).parent))
 
-def _pixel_representation(image: torch.Tensor) -> dict[str, object]:
-    return {
-        "representation": image,
-        "space_type": "pixel",
-        "spatial_shape": tuple(image.shape[-2:]),
-    }
+from support.representation_builders import make_pixel_output
 
 
-def test_reference_diffusion_basic_fit_and_infer_emit_diffusion_artifacts() -> None:
-    """ReferenceDiffusionBasicNormality should emit conditional diffusion artifacts."""
+def test_reference_diffusion_basic_fit_and_infer_accept_representation_output() -> None:
+    """ReferenceDiffusionBasicNormality should emit diffusion artifacts for typed pixel outputs."""
 
-    torch.manual_seed(0)
+    generator = torch.Generator().manual_seed(0)
     samples = [
-        Sample(image=torch.rand(3, 16, 16), reference=torch.rand(3, 16, 16), sample_id="sample-001"),
-        Sample(image=torch.rand(3, 16, 16), reference=torch.rand(3, 16, 16), sample_id="sample-002"),
+        Sample(
+            image=torch.rand(3, 16, 16, generator=generator),
+            reference=torch.rand(3, 16, 16, generator=generator),
+            sample_id=f"sample-{index + 1:03d}",
+        )
+        for index in range(2)
     ]
-    representations = [_pixel_representation(sample.image) for sample in samples]
+    representations = [make_pixel_output(sample.image, sample_id=sample.sample_id or "sample") for sample in samples]
     model = ReferenceDiffusionBasicNormality(
         input_channels=3,
         hidden_channels=8,
@@ -58,6 +61,11 @@ def test_reference_diffusion_basic_fit_and_infer_emit_diffusion_artifacts() -> N
     assert conditional_alignment.shape == (16, 16)
     assert artifacts.get_diag("time_embed_dim") == 32
     assert artifacts.get_diag("num_train_timesteps") == 32
+    assert artifacts.representation == representations[0].to_artifact_dict()
+    assert artifacts.representation["space"] == "pixel"
+    assert artifacts.representation["sample_id"] == "sample-001"
+    assert ReferenceDiffusionBasicNormality.accepted_spaces == frozenset({"pixel"})
+    assert ReferenceDiffusionBasicNormality.accepted_tensor_ranks == frozenset({3})
 
 
 def test_reference_diffusion_basic_accepts_pil_reference_fallback() -> None:
@@ -69,7 +77,7 @@ def test_reference_diffusion_basic_accepts_pil_reference_fallback() -> None:
         reference=Image.new("RGB", (12, 10), color=(0, 255, 0)),
         sample_id="sample-pil",
     )
-    representation = _pixel_representation(sample.image)
+    representation = make_pixel_output(sample.image, sample_id="sample-pil")
     model = ReferenceDiffusionBasicNormality(
         input_channels=3,
         hidden_channels=8,
@@ -85,3 +93,4 @@ def test_reference_diffusion_basic_accepts_pil_reference_fallback() -> None:
     artifacts = model.infer(sample, representation)
 
     assert artifacts.get_primary("reference_projection").shape == (3, 16, 16)
+    assert artifacts.representation["sample_id"] == "sample-pil"

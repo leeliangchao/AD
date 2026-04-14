@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 
 import torch
 
@@ -15,18 +16,14 @@ from adrf.normality.reference_basic import ReferenceBasicNormality
 from adrf.normality.reference_diffusion_basic import ReferenceDiffusionBasicNormality
 from adrf.utils.config import load_yaml_config
 
+sys.path.insert(0, str(Path(__file__).parent))
+
+from support.representation_builders import make_pixel_output
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FILLED_SMOKE_MATRIX = PROJECT_ROOT / "configs" / "ablation" / "paper_baseline_matrix_official_v1_filled_smoke.yaml"
 FILLED_FULL_MATRIX = PROJECT_ROOT / "configs" / "ablation" / "paper_baseline_matrix_official_v1_filled.yaml"
-
-
-def _pixel_representation(image: torch.Tensor) -> dict[str, object]:
-    return {
-        "representation": image,
-        "space_type": "pixel",
-        "spatial_shape": tuple(image.shape[-2:]),
-    }
 
 
 def test_filled_experiment_configs_expose_explicit_capacity_parameters() -> None:
@@ -83,8 +80,8 @@ def test_filled_diffusion_family_accepts_capacity_and_process_parameters() -> No
 
     torch.manual_seed(0)
     representations = [
-        _pixel_representation(torch.rand(3, 16, 16)),
-        _pixel_representation(torch.rand(3, 16, 16)),
+        make_pixel_output(torch.rand(3, 16, 16), sample_id=f"diffusion-{index:03d}")
+        for index in range(2)
     ]
     diffusion_basic = DiffusionBasicNormality(
         input_channels=3,
@@ -100,7 +97,7 @@ def test_filled_diffusion_family_accepts_capacity_and_process_parameters() -> No
     )
     diffusion_basic.fit(representations)
     diffusion_artifacts = diffusion_basic.infer(
-        Sample(image=representations[0]["representation"], sample_id="diffusion"),
+        Sample(image=representations[0].tensor, sample_id="diffusion"),
         representations[0],
     )
 
@@ -130,7 +127,7 @@ def test_filled_diffusion_family_accepts_capacity_and_process_parameters() -> No
     )
     diffusion_inversion.fit(representations)
     inversion_artifacts = diffusion_inversion.infer(
-        Sample(image=representations[0]["representation"], sample_id="process"),
+        Sample(image=representations[0].tensor, sample_id="process"),
         representations[0],
     )
 
@@ -145,7 +142,9 @@ def test_filled_diffusion_family_accepts_capacity_and_process_parameters() -> No
         Sample(image=torch.rand(3, 16, 16), reference=torch.rand(3, 16, 16), sample_id="ref-001"),
         Sample(image=torch.rand(3, 16, 16), reference=torch.rand(3, 16, 16), sample_id="ref-002"),
     ]
-    reference_representations = [_pixel_representation(sample.image) for sample in reference_samples]
+    reference_representations = [
+        make_pixel_output(sample.image, sample_id=sample.sample_id or "sample") for sample in reference_samples
+    ]
     reference_diffusion = ReferenceDiffusionBasicNormality(
         input_channels=3,
         base_channels=12,
@@ -173,6 +172,8 @@ def test_filled_diffusion_family_accepts_capacity_and_process_parameters() -> No
     }
     assert reference_artifacts.get_aux("predicted_noise").shape == (3, 16, 16)
     assert reference_artifacts.get_primary("reference_projection").shape == (3, 16, 16)
+    assert reference_artifacts.representation["space"] == "pixel"
+    assert reference_artifacts.representation["sample_id"] == "ref-001"
 
 
 def test_filled_classical_and_conditional_baselines_preserve_artifact_contracts() -> None:
@@ -180,8 +181,8 @@ def test_filled_classical_and_conditional_baselines_preserve_artifact_contracts(
 
     torch.manual_seed(0)
     representations = [
-        _pixel_representation(torch.rand(3, 32, 32)),
-        _pixel_representation(torch.rand(3, 32, 32)),
+        make_pixel_output(torch.rand(3, 32, 32), sample_id=f"autoencoder-{index:03d}")
+        for index in range(2)
     ]
     autoencoder = AutoEncoderNormality(
         input_channels=3,
@@ -195,7 +196,7 @@ def test_filled_classical_and_conditional_baselines_preserve_artifact_contracts(
     )
     autoencoder.fit(representations)
     autoencoder_artifacts = autoencoder.infer(
-        Sample(image=representations[0]["representation"], sample_id="ae"),
+        Sample(image=representations[0].tensor, sample_id="ae"),
         representations[0],
     )
 
@@ -209,7 +210,9 @@ def test_filled_classical_and_conditional_baselines_preserve_artifact_contracts(
         Sample(image=torch.rand(3, 16, 16), reference=torch.rand(3, 16, 16), sample_id="rb-001"),
         Sample(image=torch.rand(3, 16, 16), reference=torch.rand(3, 16, 16), sample_id="rb-002"),
     ]
-    reference_representations = [_pixel_representation(sample.image) for sample in reference_samples]
+    reference_representations = [
+        make_pixel_output(sample.image, sample_id=sample.sample_id or "sample") for sample in reference_samples
+    ]
     reference_basic = ReferenceBasicNormality(
         input_channels=3,
         base_channels=10,
@@ -229,6 +232,8 @@ def test_filled_classical_and_conditional_baselines_preserve_artifact_contracts(
     assert reference_artifacts.capabilities == {"reference_projection", "conditional_alignment"}
     assert reference_artifacts.get_primary("reference_projection").shape == (3, 16, 16)
     assert reference_artifacts.get_aux("conditional_alignment").shape == (16, 16)
+    assert reference_artifacts.representation["space"] == "pixel"
+    assert reference_artifacts.representation["sample_id"] == "rb-001"
 
 
 def test_filled_matrix_configs_expand_to_expected_contract_sizes() -> None:
