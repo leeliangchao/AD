@@ -9,17 +9,23 @@ from typing import Any
 import torch
 import torch.nn.functional as functional
 from torch import nn
+from torch.nn.parallel import DistributedDataParallel
 
 from adrf.core.sample import Sample
 from adrf.utils.config import load_yaml_config
+from adrf.utils.distributed import DistributedRuntimeContext
 
 
 DEFAULT_RUNTIME_PROFILE: dict[str, Any] = {
     "name": "default",
-    "device": "auto",
-    "amp": False,
+    "device": {
+        "type": "auto",
+        "ids": None,
+    },
+    "precision": {
+        "amp": False,
+    },
     "dataloader": {
-        "batch_size": None,
         "num_workers": None,
         "pin_memory": False,
         "persistent_workers": False,
@@ -29,6 +35,10 @@ DEFAULT_RUNTIME_PROFILE: dict[str, Any] = {
         "enabled": True,
         "record_timing": True,
         "record_memory": False,
+    },
+    "distributed": {
+        "backend": "nccl",
+        "find_unused_parameters": False,
     },
 }
 
@@ -45,8 +55,104 @@ def load_runtime_profile(path_or_cfg: str | Path | dict[str, Any] | None) -> dic
         raw = path_or_cfg
     else:
         raise TypeError("Runtime profile must be a path, dict, or None.")
-    _deep_update(profile, raw)
+    _deep_update(profile, _normalize_runtime_payload(raw))
     return profile
+
+
+def _normalize_runtime_payload(raw: dict[str, Any]) -> dict[str, Any]:
+    """Normalize legacy and new runtime schemas into one internal shape."""
+
+    normalized = _deep_copy(DEFAULT_RUNTIME_PROFILE)
+    if "name" in raw:
+        normalized["name"] = raw["name"]
+
+    device_payload = raw.get("device", DEFAULT_RUNTIME_PROFILE["device"])
+    normalized["device"] = _normalize_device_payload(device_payload)
+
+    precision_payload = raw.get("precision", {})
+    if not isinstance(precision_payload, dict):
+        raise TypeError("runtime precision must be a mapping when provided.")
+    normalized["precision"] = {
+        "amp": bool(precision_payload.get("amp", raw.get("amp", False))),
+    }
+
+    dataloader_payload = raw.get("dataloader", {})
+    if dataloader_payload is not None:
+        if not isinstance(dataloader_payload, dict):
+            raise TypeError("runtime dataloader must be a mapping when provided.")
+        _deep_update(
+            normalized["dataloader"],
+            {
+                key: value
+                for key, value in dataloader_payload.items()
+                if key != "batch_size"
+            },
+        )
+
+    profiling_payload = raw.get("profiling", {})
+    if profiling_payload is not None:
+        if not isinstance(profiling_payload, dict):
+            raise TypeError("runtime profiling must be a mapping when provided.")
+        _deep_update(normalized["profiling"], profiling_payload)
+
+    distributed_payload = raw.get("distributed", {})
+    if distributed_payload is not None:
+        if not isinstance(distributed_payload, dict):
+            raise TypeError("runtime distributed must be a mapping when provided.")
+        _deep_update(
+            normalized["distributed"],
+            {
+                key: value
+                for key, value in distributed_payload.items()
+                if key != "enabled"
+            },
+        )
+
+    return normalized
+
+
+def _normalize_device_payload(payload: Any) -> dict[str, Any]:
+    """Normalize runtime device payloads from legacy and new schema shapes."""
+
+    if isinstance(payload, str):
+        if payload in {"auto", "cpu"}:
+            return {"type": payload, "ids": None}
+        if payload == "cuda":
+            return {"type": "cuda", "ids": [0]}
+        if payload.startswith("cuda:"):
+            index = int(payload.split(":", maxsplit=1)[1])
+            if index < 0:
+                raise ValueError("CUDA device ids must be non-negative.")
+            return {"type": "cuda", "ids": [index]}
+        raise ValueError(f"Unsupported runtime device request: {payload}")
+
+    if not isinstance(payload, dict):
+        raise TypeError("runtime device must be a string or mapping.")
+
+    device_type = str(payload.get("type", "auto"))
+    ids = payload.get("ids")
+    if device_type == "cuda":
+        if ids is None:
+            normalized_ids: list[int] | None = [0]
+        else:
+            if not isinstance(ids, list) or not ids:
+                raise ValueError("runtime device.ids must be a non-empty list when provided.")
+            normalized_ids = []
+            for raw_id in ids:
+                gpu_id = int(raw_id)
+                if gpu_id < 0:
+                    raise ValueError("runtime device.ids entries must be non-negative.")
+                normalized_ids.append(gpu_id)
+            if len(set(normalized_ids)) != len(normalized_ids):
+                raise ValueError("runtime device.ids entries must be unique.")
+        return {"type": "cuda", "ids": normalized_ids}
+
+    if device_type in {"cpu", "auto"}:
+        if ids is not None:
+            raise ValueError(f"runtime device.ids is only valid for device.type=cuda, got {device_type}.")
+        return {"type": device_type, "ids": None}
+
+    raise ValueError(f"Unsupported runtime device type: {device_type}")
 
 
 def resolve_dataloader_runtime(runtime_cfg: dict[str, Any], defaults: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -55,23 +161,40 @@ def resolve_dataloader_runtime(runtime_cfg: dict[str, Any], defaults: dict[str, 
     resolved = dict(defaults or {})
     dataloader_cfg = runtime_cfg.get("dataloader", {})
     if isinstance(dataloader_cfg, dict):
-        resolved.update({key: value for key, value in dataloader_cfg.items() if value is not None})
+        resolved.update(
+            {
+                key: value
+                for key, value in dataloader_cfg.items()
+                if value is not None and key != "batch_size"
+            }
+        )
 
     if resolved.get("num_workers", 0) == 0:
         resolved["persistent_workers"] = False
     return resolved
 
 
-def configure_trainable_runtime(model: object, device: torch.device, amp_enabled: bool) -> None:
+def configure_trainable_runtime(
+    model: object,
+    device: torch.device,
+    amp_enabled: bool,
+    distributed_context: DistributedRuntimeContext | None = None,
+) -> None:
     """Attach runtime device/AMP hints to a trainable model."""
 
+    context = distributed_context or DistributedRuntimeContext()
     if isinstance(model, nn.Module):
         model.to(device)
     setattr(model, "runtime_device", device)
     effective_amp = bool(amp_enabled and device.type == "cuda")
     setattr(model, "amp_enabled", effective_amp)
     setattr(model, "grad_scaler", torch.amp.GradScaler("cuda", enabled=effective_amp))
-    if effective_amp or device.type != "cpu":
+    setattr(model, "distributed_context", context)
+    distributed_training_enabled = False
+    if context.enabled and context.world_size > 1:
+        distributed_training_enabled = _wrap_trainable_modules_for_distributed(model, device, context)
+    setattr(model, "distributed_training_enabled", distributed_training_enabled)
+    if effective_amp or device.type != "cpu" or distributed_training_enabled:
         _wrap_fit_for_runtime(model)
 
 
@@ -162,6 +285,80 @@ def _wrap_fit_for_runtime(model: object) -> None:
     setattr(model, "_adrf_runtime_wrapped", True)
 
 
+def _wrap_trainable_modules_for_distributed(
+    model: object,
+    device: torch.device,
+    distributed_context: DistributedRuntimeContext,
+) -> bool:
+    """Wrap trainable submodules with DDP when requested."""
+
+    if getattr(model, "_adrf_distributed_wrapped", False):
+        return bool(getattr(model, "distributed_training_enabled", False))
+
+    wrapped_any = False
+    for module_name in _distributed_trainable_module_names(model):
+        module = getattr(model, module_name, None)
+        if isinstance(module, nn.Module):
+            setattr(
+                model,
+                module_name,
+                _wrap_module_for_distributed(module, device, distributed_context),
+            )
+            wrapped_any = True
+
+    setattr(model, "_adrf_distributed_wrapped", True)
+    return wrapped_any
+
+
+def _distributed_trainable_module_names(model: object) -> tuple[str, ...]:
+    """Return the trainable submodules that should be wrapped for DDP."""
+
+    if hasattr(model, "encoder") and hasattr(model, "decoder"):
+        return ("encoder", "decoder")
+    if hasattr(model, "conditional_denoiser"):
+        return ("conditional_denoiser",)
+    if hasattr(model, "conditional_model"):
+        return ("conditional_model",)
+    if hasattr(model, "denoiser"):
+        return ("denoiser",)
+    return ()
+
+
+def _wrap_module_for_distributed(
+    module: nn.Module,
+    device: torch.device,
+    distributed_context: DistributedRuntimeContext,
+) -> DistributedDataParallel:
+    """Wrap one module with DDP using CPU or CUDA-appropriate arguments."""
+
+    kwargs: dict[str, Any] = {
+        "find_unused_parameters": distributed_context.find_unused_parameters,
+    }
+    if device.type == "cuda":
+        device_index = int(device.index or 0)
+        kwargs["device_ids"] = [device_index]
+        kwargs["output_device"] = device_index
+    return DistributedDataParallel(module, **kwargs)
+
+
+def _wrap_diffusers_adapter_for_distributed(model: Any) -> None:
+    """Wrap a lazily-instantiated diffusers adapter model when distributed is enabled."""
+
+    distributed_context = getattr(model, "distributed_context", DistributedRuntimeContext())
+    if not distributed_context.enabled or distributed_context.world_size <= 1:
+        return
+    adapter = getattr(model, "diffusers_adapter", None)
+    if adapter is None or not hasattr(adapter, "model"):
+        return
+    if isinstance(adapter.model, DistributedDataParallel):
+        return
+    adapter.model = _wrap_module_for_distributed(
+        adapter.model,
+        getattr(model, "runtime_device", torch.device("cpu")),
+        distributed_context,
+    )
+
+
 def _autocast_context(model: object):
     """Return the correct autocast context for the model runtime."""
 
@@ -240,8 +437,13 @@ def _make_diffusion_fit(model: Any):
                     if getattr(model, "backend", "legacy") == "diffusers":
                         loss, _ = model.diffusers_adapter.forward_train_step(clean_batch)
                     else:
-                        noisy_batch, target_noise, timesteps = model._sample_noisy_inputs(clean_batch)
-                        predicted_noise = model.denoiser(noisy_batch, timesteps)
+                        sampled = model._sample_noisy_inputs(clean_batch)
+                        if len(sampled) == 4:
+                            noisy_batch, target_noise, timesteps, noise_scales = sampled
+                            predicted_noise = model.denoiser(noisy_batch, timesteps, noise_scales)
+                        else:
+                            noisy_batch, target_noise, timesteps = sampled
+                            predicted_noise = model.denoiser(noisy_batch, timesteps)
                         loss = functional.mse_loss(predicted_noise, target_noise)
                 _optimizer_step(model, optimizer, loss)
                 model.last_fit_loss = float(loss.detach().cpu().item())

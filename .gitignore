@@ -5,6 +5,7 @@ __pycache__/
 .idea/
 /data/
 /.codex
+/.worktrees/
 /outputs/*
 !/outputs/.gitkeep
 !/outputs/runs/

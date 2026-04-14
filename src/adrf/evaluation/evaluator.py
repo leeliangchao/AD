@@ -40,6 +40,42 @@ class BasicADEvaluator(Evaluator):
         self.pixel_masks: list[np.ndarray] = []
         self.pixel_maps: list[np.ndarray] = []
 
+    def state_dict(self) -> dict[str, Any]:
+        """Serialize the accumulated evaluator state for cross-rank aggregation."""
+
+        return {
+            "image_labels": list(self.image_labels),
+            "image_scores": list(self.image_scores),
+            "pixel_masks": [mask.copy() for mask in self.pixel_masks],
+            "pixel_maps": [anomaly_map.copy() for anomaly_map in self.pixel_maps],
+        }
+
+    def load_state_dict(self, state: Mapping[str, Any]) -> None:
+        """Restore the evaluator state from a serialized payload."""
+
+        self.reset()
+        self.image_labels = [int(value) for value in state.get("image_labels", [])]
+        self.image_scores = [float(value) for value in state.get("image_scores", [])]
+        self.pixel_masks = [np.asarray(mask) for mask in state.get("pixel_masks", [])]
+        self.pixel_maps = [np.asarray(anomaly_map) for anomaly_map in state.get("pixel_maps", [])]
+
+    @classmethod
+    def merge_states(cls, states: list[Mapping[str, Any]]) -> dict[str, Any]:
+        """Merge multiple evaluator state payloads into one combined state."""
+
+        merged = {
+            "image_labels": [],
+            "image_scores": [],
+            "pixel_masks": [],
+            "pixel_maps": [],
+        }
+        for state in states:
+            merged["image_labels"].extend(int(value) for value in state.get("image_labels", []))
+            merged["image_scores"].extend(float(value) for value in state.get("image_scores", []))
+            merged["pixel_masks"].extend(np.asarray(mask) for mask in state.get("pixel_masks", []))
+            merged["pixel_maps"].extend(np.asarray(anomaly_map) for anomaly_map in state.get("pixel_maps", []))
+        return merged
+
     @staticmethod
     def _resolve_image_label(sample: Sample) -> int:
         """Resolve the image-level ground-truth anomaly label."""

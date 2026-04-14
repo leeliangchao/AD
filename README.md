@@ -2,6 +2,17 @@
 
 Industrial anomaly detection research framework for running single experiments, benchmark suites, ablation matrices, and audited report exports.
 
+## Research Entry
+
+If you are entering this repo as a researcher, start here:
+
+- Getting started: `docs/getting_started_research.md`
+- Official contract: `docs/official_baseline_contract.md`
+- Result reading: `docs/result_reading_guide.md`
+- Environment check: `uv run python scripts/check_research_env.py`
+- Contract printout: `uv run python scripts/print_official_contract.py`
+- Smoke run: `uv run python scripts/run_official_filled_matrix.py --config configs/ablation/paper_baseline_matrix_official_v1_filled_smoke.yaml`
+
 ## Official Baseline Contract
 
 The official baseline comparison contract is now pinned at:

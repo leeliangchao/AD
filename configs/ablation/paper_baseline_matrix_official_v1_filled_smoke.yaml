@@ -6,6 +6,10 @@ description: >
 runtime_config: configs/runtime/smoke.yaml
 seeds: [0]
 
+report:
+  grouped_tables: true
+  category_mean_table: true
+
 overrides:
   trainer:
     max_epochs: 1
@@ -72,6 +76,7 @@ normality:
       channel_mults: [1, 2, 2]
       num_res_blocks: 2
       time_embed_dim: 64
+      conditioning_hidden_dim: 96
       num_train_timesteps: 100
       learning_rate: 0.001
       epochs: 1
@@ -86,14 +91,17 @@ normality:
       channel_mults: [1, 2, 2]
       num_res_blocks: 2
       time_embed_dim: 64
+      conditioning_hidden_dim: 96
       num_train_timesteps: 100
       learning_rate: 0.001
       epochs: 1
       batch_size: 2
       noise_level: 0.2
       num_steps: 6
-      step_size: 0.1
-      initial_noise_scale: 0.2
+      step_size: 0.15
+      initial_noise_scale: 0.25
+      rollout_gain: 1.1
+      denoised_blend: 0.2
   reference_basic:
     name: reference_basic
     params:

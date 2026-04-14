@@ -14,6 +14,18 @@ from adrf.core.sample import Sample
 Split = Literal["train", "test"]
 
 
+def sorted_image_paths(directory: Path) -> list[Path]:
+    """Return sorted image files from a directory."""
+
+    if not directory.exists():
+        return []
+
+    allowed_suffixes = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".ppm", ".pgm"}
+    return sorted(
+        path for path in directory.iterdir() if path.is_file() and path.suffix.lower() in allowed_suffixes
+    )
+
+
 @dataclass(slots=True)
 class _SampleRecord:
     """Internal index entry for one MVTec sample."""
@@ -34,6 +46,7 @@ class MVTecSingleClassDataset(Dataset[Sample]):
         category: str = "bottle",
         split: Split = "train",
         reference_index: int = 0,
+        reference_path: str | Path | None = None,
         transform: Callable[[Sample], Sample] | None = None,
     ) -> None:
         self.root = Path(root)
@@ -42,11 +55,16 @@ class MVTecSingleClassDataset(Dataset[Sample]):
         self.reference_index = reference_index
         self.transform = transform
         self.category_root = self.root / self.category
+        self._reference_image: Image.Image | None = None
 
         if not self.category_root.exists():
             raise FileNotFoundError(f"MVTec category path does not exist: {self.category_root}")
 
-        self.reference_path = self._resolve_reference_path()
+        self.reference_path = (
+            self._validate_reference_path(reference_path)
+            if reference_path is not None
+            else self._resolve_reference_path()
+        )
         self._records = self._index_records()
 
     def __len__(self) -> int:
@@ -59,7 +77,7 @@ class MVTecSingleClassDataset(Dataset[Sample]):
 
         record = self._records[index]
         image = Image.open(record.image_path).convert("RGB")
-        reference = Image.open(self.reference_path).convert("RGB")
+        reference = self._load_reference_image()
         mask = Image.open(record.mask_path).convert("L") if record.mask_path is not None else None
         sample = Sample(
             image=image,
@@ -78,11 +96,28 @@ class MVTecSingleClassDataset(Dataset[Sample]):
         )
         return self.transform(sample) if self.transform is not None else sample
 
+    def _load_reference_image(self) -> Image.Image:
+        """Load and cache the fixed reference image for this dataset instance."""
+
+        if self._reference_image is None:
+            self._reference_image = Image.open(self.reference_path).convert("RGB")
+        return self._reference_image.copy()
+
+    def _validate_reference_path(self, reference_path: str | Path) -> Path:
+        """Validate and eagerly cache an explicit reference override."""
+
+        resolved_reference_path = Path(reference_path)
+        if not resolved_reference_path.is_file():
+            raise FileNotFoundError(f"Explicit reference image does not exist: {resolved_reference_path}")
+        with Image.open(resolved_reference_path) as reference_image:
+            self._reference_image = reference_image.convert("RGB")
+        return resolved_reference_path
+
     def _index_records(self) -> list[_SampleRecord]:
         """Collect sample records for the configured split."""
 
         if self.split == "train":
-            image_paths = self._sorted_image_paths(self.category_root / "train" / "good")
+            image_paths = sorted_image_paths(self.category_root / "train" / "good")
             return [
                 _SampleRecord(
                     image_path=image_path,
@@ -99,7 +134,7 @@ class MVTecSingleClassDataset(Dataset[Sample]):
         for defect_dir in sorted(path for path in test_root.iterdir() if path.is_dir()):
             defect_type = defect_dir.name
             label = 0 if defect_type == "good" else 1
-            for image_path in self._sorted_image_paths(defect_dir):
+            for image_path in sorted_image_paths(defect_dir):
                 mask_path: Path | None = None
                 if label == 1:
                     mask_path = self._resolve_mask_path(defect_type, image_path)
@@ -133,7 +168,7 @@ class MVTecSingleClassDataset(Dataset[Sample]):
     def _resolve_reference_path(self) -> Path:
         """Resolve the fixed category-level reference image path."""
 
-        candidates = self._sorted_image_paths(self.category_root / "train" / "good")
+        candidates = sorted_image_paths(self.category_root / "train" / "good")
         if not candidates:
             raise FileNotFoundError(
                 f"No train/good reference candidates found under {self.category_root / 'train' / 'good'}."
@@ -143,15 +178,3 @@ class MVTecSingleClassDataset(Dataset[Sample]):
                 f"reference_index={self.reference_index} is out of range for {len(candidates)} candidates."
             )
         return candidates[self.reference_index]
-
-    @staticmethod
-    def _sorted_image_paths(directory: Path) -> list[Path]:
-        """Return sorted image files from a directory."""
-
-        if not directory.exists():
-            return []
-
-        allowed_suffixes = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".ppm", ".pgm"}
-        return sorted(
-            path for path in directory.iterdir() if path.is_file() and path.suffix.lower() in allowed_suffixes
-        )

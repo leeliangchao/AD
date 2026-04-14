@@ -31,3 +31,7 @@ def test_run_official_filled_matrix_script_executes_smoke_config() -> None:
     assert payload["matrix_name"] == "paper_baseline_matrix_official_v1_filled_smoke"
     assert len(payload["experiments"]) == 7
     assert all(record["status"] == "completed" for record in payload["experiments"])
+    matrix_dir = Path(payload["matrix_dir"])
+    assert (matrix_dir / "paper_table.md").exists()
+    assert (matrix_dir / "paper_table_category_mean.md").exists()
+    assert (matrix_dir / "paper_table_by_axis.md").exists()

@@ -8,7 +8,7 @@ seeds: [0, 1, 2]
 
 overrides:
   trainer:
-    max_epochs: 10
+    max_epochs: 100
   dataloader:
     batch_size: 32
   optimization:

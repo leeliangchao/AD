@@ -23,6 +23,7 @@ from adrf.evidence.noise_residual import NoiseResidualEvidence
 from adrf.evidence.path_cost import PathCostEvidence
 from adrf.evidence.reconstruction_residual import ReconstructionResidualEvidence
 from adrf.logging.base import BaseLogger
+from adrf.logging.null_logger import NullLogger
 from adrf.logging.run_logger import RunLogger
 from adrf.normality.autoencoder import AutoEncoderNormality
 from adrf.normality.diffusion_basic import DiffusionBasicNormality
@@ -36,6 +37,12 @@ from adrf.reporting.report import export_experiment_report
 from adrf.representation.feature import FeatureRepresentation
 from adrf.representation.pixel import PixelRepresentation
 from adrf.utils.config import instantiate_component, load_yaml_config
+from adrf.utils.distributed import (
+    DistributedRuntimeContext,
+    destroy_distributed_context,
+    initialize_distributed_context,
+    resolve_distributed_context,
+)
 from adrf.utils.device import resolve_device
 from adrf.utils.runtime import (
     RuntimeRepresentationAdapter,
@@ -87,13 +94,19 @@ class ExperimentRunner:
         self.registry = registry or build_default_registry()
         self.raw_overrides = self._extract_overrides(self.config)
         self.config = self._apply_budget_overrides(self.config, self.raw_overrides)
-        self.loggers = self._normalize_loggers(logger, output_root)
+        self.runtime_profile = self._resolve_runtime_profile(runtime_config)
+        self.runtime_profile = self._apply_runtime_overrides(self.runtime_profile, self.raw_overrides)
+        self.distributed_context = resolve_distributed_context(self.runtime_profile)
+        self.runtime_profile["distributed"] = self.distributed_context.as_runtime_config()
+        self.loggers = self._normalize_loggers(
+            logger,
+            output_root,
+            local_artifacts_enabled=self.distributed_context.is_primary,
+        )
         self.logger = self._primary_logger(self.loggers)
         self.run_name = run_name or self._derive_run_name()
         self.seed = seed if seed is not None else self._derive_seed()
-        self.runtime_profile = self._resolve_runtime_profile(runtime_config)
-        self.runtime_profile = self._apply_runtime_overrides(self.runtime_profile, self.raw_overrides)
-        self.device, self.device_info = resolve_device(self.runtime_profile)
+        self.device, self.device_info = resolve_device(self.runtime_profile, self.distributed_context)
         self.budget_info = self._collect_budget_info(self.config, self.raw_overrides)
         self.runtime_stats: dict[str, Any] = {}
         self.run_dir: Path | None = None
@@ -103,10 +116,13 @@ class ExperimentRunner:
         self.evidence: Any | None = None
         self.evaluator: Any | None = None
         self.protocol: Any | None = None
+        self.distributed_training_enabled = False
 
     def setup(self) -> None:
         """Instantiate all configured components."""
 
+        self.distributed_context = initialize_distributed_context(self.distributed_context, self.device)
+        self.runtime_profile["distributed"] = self.distributed_context.as_runtime_config()
         datamodule_spec = self._resolve_datamodule_spec(self.config["datamodule"])
         self.datamodule = instantiate_component(
             datamodule_spec,
@@ -135,7 +151,9 @@ class ExperimentRunner:
             self.normality,
             device=self.device,
             amp_enabled=bool(self.device_info["amp_enabled"]),
+            distributed_context=self.distributed_context,
         )
+        self.distributed_training_enabled = bool(getattr(self.normality, "distributed_training_enabled", False))
 
         self.evidence = instantiate_component(
             self.config["evidence"],
@@ -168,10 +186,10 @@ class ExperimentRunner:
     def run(self) -> dict[str, Any]:
         """Run the full experiment lifecycle."""
 
-        self._ensure_setup()
-        self._initialize_seed()
-        self._start_logged_run()
         try:
+            self._ensure_setup()
+            self._initialize_seed()
+            self._start_logged_run()
             profiling_cfg = self.runtime_profile.get("profiling", {})
             record_timing = bool(profiling_cfg.get("record_timing", True))
             record_memory = bool(profiling_cfg.get("record_memory", False))
@@ -202,6 +220,10 @@ class ExperimentRunner:
             self.runtime_stats = {
                 "profile_name": self.runtime_profile.get("name", "default"),
                 **self.device_info,
+                "distributed_enabled": self.distributed_context.enabled,
+                "rank": self.distributed_context.rank,
+                "local_rank": self.distributed_context.local_rank,
+                "world_size": self.distributed_context.world_size,
                 "dataloader": resolve_dataloader_runtime(self.runtime_profile),
                 "train_time_s": train_time if record_timing else None,
                 "eval_time_s": eval_time if record_timing else None,
@@ -220,6 +242,8 @@ class ExperimentRunner:
         except Exception:
             self._finish_loggers(status="failed")
             raise
+        finally:
+            destroy_distributed_context(self.distributed_context)
 
     def _ensure_setup(self) -> None:
         """Instantiate components lazily when needed."""
@@ -274,6 +298,8 @@ class ExperimentRunner:
     def _start_logged_run(self) -> None:
         """Create the local run directory and persist initial metadata."""
 
+        if not self.distributed_context.is_primary:
+            return
         if self.run_dir is not None:
             return
 
@@ -283,6 +309,7 @@ class ExperimentRunner:
             "runtime": {
                 "profile_name": self.runtime_profile.get("name", "default"),
                 **self.device_info,
+                "distributed": self.distributed_context.as_runtime_config(),
                 "dataloader": resolve_dataloader_runtime(self.runtime_profile),
             },
             "budget": self.budget_info,
@@ -299,7 +326,7 @@ class ExperimentRunner:
     def _save_checkpoint_if_supported(self) -> None:
         """Persist a minimal checkpoint for trainable normality models."""
 
-        if self.run_dir is None:
+        if self.run_dir is None or self.logger is None or not self.distributed_context.is_primary:
             return
 
         checkpoint_path = self.logger.resolve_artifact_path("checkpoints/normality.pt")
@@ -373,8 +400,13 @@ class ExperimentRunner:
     def _normalize_loggers(
         logger: BaseLogger | Sequence[BaseLogger] | None,
         output_root: str | Path,
+        *,
+        local_artifacts_enabled: bool,
     ) -> list[BaseLogger]:
         """Normalize logger input into a list while ensuring a local RunLogger exists."""
+
+        if not local_artifacts_enabled:
+            return [NullLogger()]
 
         if logger is None:
             return [RunLogger(base_dir=output_root)]
@@ -391,13 +423,13 @@ class ExperimentRunner:
         return loggers
 
     @staticmethod
-    def _primary_logger(loggers: Sequence[BaseLogger]) -> RunLogger:
+    def _primary_logger(loggers: Sequence[BaseLogger]) -> RunLogger | None:
         """Return the local RunLogger that owns filesystem artifacts."""
 
         for logger in loggers:
             if isinstance(logger, RunLogger):
                 return logger
-        raise RuntimeError("ExperimentRunner requires at least one RunLogger.")
+        return None
 
     @staticmethod
     def _extract_overrides(config: Mapping[str, Any]) -> dict[str, Any]:

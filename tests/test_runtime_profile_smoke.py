@@ -4,6 +4,42 @@ import json
 from pathlib import Path
 
 from adrf.runner.experiment_runner import ExperimentRunner
+from adrf.utils.runtime import load_runtime_profile
+
+
+def test_load_runtime_profile_normalizes_new_runtime_schema() -> None:
+    """The runtime loader should normalize the new nested device/precision schema."""
+
+    profile = load_runtime_profile(
+        {
+            "name": "real_ddp",
+            "device": {
+                "type": "cuda",
+                "ids": [0, 3],
+            },
+            "precision": {
+                "amp": True,
+            },
+            "distributed": {
+                "backend": "nccl",
+                "find_unused_parameters": False,
+            },
+        }
+    )
+
+    assert profile["device"] == {"type": "cuda", "ids": [0, 3]}
+    assert profile["precision"]["amp"] is True
+    assert profile["distributed"]["backend"] == "nccl"
+    assert profile["distributed"]["find_unused_parameters"] is False
+
+
+def test_load_runtime_profile_keeps_backward_compatibility_for_legacy_shape() -> None:
+    """Legacy top-level `device`/`amp` runtime fields should still normalize cleanly."""
+
+    profile = load_runtime_profile({"name": "real", "device": "cuda", "amp": True})
+
+    assert profile["device"] == {"type": "cuda", "ids": [0]}
+    assert profile["precision"]["amp"] is True
 
 
 def test_runtime_profile_smoke_records_runtime_info(tmp_path: Path) -> None:
@@ -55,4 +91,3 @@ def test_runtime_profile_smoke_records_runtime_info(tmp_path: Path) -> None:
     assert "total_time_s" in runtime_info
     assert "train_time_s" in runtime_info
     assert "eval_time_s" in runtime_info
-

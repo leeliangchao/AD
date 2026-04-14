@@ -1,5 +1,6 @@
 """Tests for the minimal reference-conditioned diffusion normality model."""
 
+from PIL import Image
 import torch
 
 from adrf.core.sample import Sample
@@ -57,3 +58,30 @@ def test_reference_diffusion_basic_fit_and_infer_emit_diffusion_artifacts() -> N
     assert conditional_alignment.shape == (16, 16)
     assert artifacts.get_diag("time_embed_dim") == 32
     assert artifacts.get_diag("num_train_timesteps") == 32
+
+
+def test_reference_diffusion_basic_accepts_pil_reference_fallback() -> None:
+    """ReferenceDiffusionBasicNormality should keep working with raw PIL references."""
+
+    torch.manual_seed(0)
+    sample = Sample(
+        image=torch.rand(3, 16, 16),
+        reference=Image.new("RGB", (12, 10), color=(0, 255, 0)),
+        sample_id="sample-pil",
+    )
+    representation = _pixel_representation(sample.image)
+    model = ReferenceDiffusionBasicNormality(
+        input_channels=3,
+        hidden_channels=8,
+        time_embed_dim=32,
+        num_train_timesteps=32,
+        learning_rate=1e-3,
+        epochs=1,
+        batch_size=1,
+        noise_level=0.2,
+    )
+
+    model.fit([representation], [sample])
+    artifacts = model.infer(sample, representation)
+
+    assert artifacts.get_primary("reference_projection").shape == (3, 16, 16)
