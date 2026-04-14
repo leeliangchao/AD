@@ -339,8 +339,8 @@ def test_experiment_runner_persists_representation_provenance_and_checkpoint(tmp
     assert (runner.run_dir / "checkpoints" / "representation.pt").exists()
 
 
-def test_paper_matrix_feature_representation_uses_explicit_weights_trainable_input_schema(tmp_path: Path) -> None:
-    """Paper-schema feature baselines should resolve to the new representation config contract."""
+def test_paper_matrix_feature_representation_follows_effective_dataset_shape_and_normalize(tmp_path: Path) -> None:
+    """Paper-schema feature baselines should inherit effective dataset sizing and normalize settings."""
 
     dataset_dir = tmp_path / "configs" / "dataset"
     dataset_dir.mkdir(parents=True)
@@ -378,6 +378,10 @@ def test_paper_matrix_feature_representation_uses_explicit_weights_trainable_inp
                 "  feature_memory: [feature_distance]",
                 "protocol: one_class",
                 "evaluation: default",
+                "overrides:",
+                "  dataset:",
+                "    image_size: [48, 40]",
+                "    normalize: true",
             ]
         ),
         encoding="utf-8",
@@ -388,7 +392,7 @@ def test_paper_matrix_feature_representation_uses_explicit_weights_trainable_inp
 
     assert params["weights"] == "imagenet1k_v1"
     assert params["trainable"] is False
-    assert tuple(params["input_image_size"]) == (256, 256)
-    assert params["input_normalize"] is False
+    assert tuple(params["input_image_size"]) == (48, 40)
+    assert params["input_normalize"] is True
     assert "pretrained" not in params
     assert "freeze" not in params

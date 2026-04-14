@@ -191,6 +191,8 @@ class AblationMatrix:
             "evaluator": self._resolve_component("evaluators", evaluator_alias),
         }
         overrides = combo.get("overrides", {})
+        if self._is_paper_schema():
+            self._align_paper_feature_representation_with_dataset(config, overrides)
         resolved_runtime_config = self._resolve_runtime_config(overrides)
         if resolved_runtime_config is not None:
             config["runtime_config"] = resolved_runtime_config
@@ -319,8 +321,6 @@ class AblationMatrix:
                     "params": {
                         "weights": "imagenet1k_v1",
                         "trainable": False,
-                        "input_image_size": (256, 256),
-                        "input_normalize": False,
                     },
                 },
             },
@@ -459,6 +459,48 @@ class AblationMatrix:
         if isinstance(overrides, dict) and "runtime_config" in overrides:
             return overrides["runtime_config"]
         return self.config.get("runtime_config")
+
+    def _align_paper_feature_representation_with_dataset(
+        self,
+        config: dict[str, Any],
+        overrides: Any,
+    ) -> None:
+        """Align compact paper-schema feature params with the effective dataset settings."""
+
+        representation = config.get("representation")
+        datamodule = config.get("datamodule")
+        if not isinstance(representation, dict) or representation.get("name") != "feature":
+            return
+        if not isinstance(datamodule, dict):
+            return
+
+        effective_dataset_params = self._effective_dataset_params(datamodule, overrides)
+        aligned = deepcopy(representation)
+        params = dict(aligned.get("params", {}))
+
+        image_size = effective_dataset_params.get("image_size")
+        if isinstance(image_size, (list, tuple)) and len(image_size) == 2:
+            params["input_image_size"] = [int(image_size[0]), int(image_size[1])]
+
+        normalize = effective_dataset_params.get("normalize")
+        if isinstance(normalize, bool):
+            params["input_normalize"] = normalize
+
+        aligned["params"] = params
+        config["representation"] = aligned
+
+    def _effective_dataset_params(self, datamodule: dict[str, Any], overrides: Any) -> dict[str, Any]:
+        """Return dataset params after applying matrix-level dataset/datamodule overrides."""
+
+        params = dict(datamodule.get("params", {})) if isinstance(datamodule.get("params", {}), dict) else {}
+        override_mapping = overrides if isinstance(overrides, dict) else {}
+        for section_name in ("dataset", "datamodule"):
+            section = override_mapping.get(section_name)
+            if not isinstance(section, dict):
+                continue
+            for key, value in section.items():
+                params[str(key)] = deepcopy(value)
+        return params
 
     def _merge_nested_mappings(self, base: Any, override: Any) -> dict[str, Any]:
         """Recursively merge two mapping-like override payloads."""
