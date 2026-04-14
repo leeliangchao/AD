@@ -1,17 +1,32 @@
 """Tests for the minimal reference-conditioned normality model."""
 
+from collections.abc import Iterable
 from pathlib import Path
 import sys
+from typing import get_type_hints
 
 from PIL import Image
 import torch
 
 from adrf.core.sample import Sample
 from adrf.normality.reference_basic import ReferenceBasicNormality
+from adrf.representation.contracts import RepresentationOutput
 
 sys.path.insert(0, str(Path(__file__).parent))
 
 from support.representation_builders import make_pixel_output
+
+
+def test_reference_basic_public_annotations_expose_representation_output_only() -> None:
+    """ReferenceBasicNormality should expose typed RepresentationOutput annotations."""
+
+    fit_hints = get_type_hints(ReferenceBasicNormality.fit)
+    infer_hints = get_type_hints(ReferenceBasicNormality.infer)
+    helper_hints = get_type_hints(ReferenceBasicNormality._prepare_reference_tensor)
+
+    assert fit_hints["representations"] == Iterable[RepresentationOutput]
+    assert infer_hints["representation"] is RepresentationOutput
+    assert helper_hints["representation"] is RepresentationOutput
 
 
 def test_reference_basic_fit_and_infer_accept_representation_output() -> None:
