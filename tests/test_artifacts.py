@@ -1,16 +1,25 @@
 """Tests for the normality artifacts exchange layer."""
 
+from pathlib import Path
+import sys
+
 import pytest
+import torch
 
 from adrf.core.artifacts import NormalityArtifacts
+
+sys.path.insert(0, str(Path(__file__).parent))
+
+from support.representation_builders import make_feature_output
 
 
 def test_artifacts_accessors_and_capability_checks() -> None:
     """Artifacts should expose typed accessors and capability validation."""
 
+    representation = make_feature_output(torch.ones(4), sample_id="sample-001")
     artifacts = NormalityArtifacts(
         context={"sample_id": "sample-001"},
-        representation={"space_type": "feature"},
+        representation=representation.to_artifact_dict(),
         primary={"normality_embedding": [1.0, 2.0]},
         auxiliary={"memory_distance": 0.25},
         diagnostics={"uncertainty": 0.1},
@@ -24,6 +33,7 @@ def test_artifacts_accessors_and_capability_checks() -> None:
     assert artifacts.get_aux("memory_distance") == 0.25
     assert artifacts.get_aux("missing", "fallback") == "fallback"
     assert artifacts.get_diag("uncertainty") == 0.1
+    assert artifacts.representation == representation.to_artifact_dict()
 
 
 def test_artifacts_require_raises_for_missing_capabilities() -> None:
@@ -46,4 +56,3 @@ def test_artifacts_use_independent_default_containers() -> None:
 
     assert second.context == {}
     assert second.capabilities == set()
-

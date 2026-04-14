@@ -1,5 +1,8 @@
 """Smoke tests for the artifacts-to-evidence-to-evaluator flow."""
 
+from pathlib import Path
+import sys
+
 import pytest
 import torch
 
@@ -10,36 +13,17 @@ from adrf.evidence.reconstruction_residual import ReconstructionResidualEvidence
 from adrf.normality.autoencoder import AutoEncoderNormality
 from adrf.normality.feature_memory import FeatureMemoryNormality
 
+sys.path.insert(0, str(Path(__file__).parent))
 
-def _pixel_representation(image: torch.Tensor) -> dict[str, object]:
-    return {
-        "representation": image,
-        "space_type": "pixel",
-        "spatial_shape": tuple(image.shape[-2:]),
-    }
+from support.representation_builders import make_feature_output, make_pixel_output
 
 
 def test_feature_memory_artifacts_flow_into_evidence_and_evaluator() -> None:
     """Feature-memory artifacts should be consumable by evidence and evaluator."""
 
-    train_representation = {
-        "representation": torch.ones(4, 2, 2),
-        "space_type": "feature",
-        "spatial_shape": (2, 2),
-        "feature_dim": 4,
-    }
-    normal_query_representation = {
-        "representation": torch.ones(4, 2, 2),
-        "space_type": "feature",
-        "spatial_shape": (2, 2),
-        "feature_dim": 4,
-    }
-    anomaly_query_representation = {
-        "representation": torch.full((4, 2, 2), 2.0),
-        "space_type": "feature",
-        "spatial_shape": (2, 2),
-        "feature_dim": 4,
-    }
+    train_representation = make_feature_output(torch.ones(4, 2, 2), sample_id="train-001")
+    normal_query_representation = make_feature_output(torch.ones(4, 2, 2), sample_id="sample-000")
+    anomaly_query_representation = make_feature_output(torch.full((4, 2, 2), 2.0), sample_id="sample-001")
     normality = FeatureMemoryNormality()
     normality.fit([train_representation])
     normal_sample = Sample(
@@ -83,8 +67,8 @@ def test_autoencoder_artifacts_flow_into_residual_evidence() -> None:
 
     generator = torch.Generator().manual_seed(0)
     train_representations = [
-        _pixel_representation(torch.rand(3, 16, 16, generator=generator))
-        for _ in range(2)
+        make_pixel_output(torch.rand(3, 16, 16, generator=generator), sample_id=f"train-{index:03d}")
+        for index in range(2)
     ]
     normality = AutoEncoderNormality(
         input_channels=3,
@@ -96,7 +80,7 @@ def test_autoencoder_artifacts_flow_into_residual_evidence() -> None:
     normality.fit(train_representations)
 
     sample = Sample(
-        image=train_representations[0]["representation"],
+        image=train_representations[0].tensor,
         label=0,
         mask=torch.zeros(1, 16, 16),
         sample_id="sample-002",
