@@ -100,7 +100,7 @@
 
 必须完成的事：
 
-- 明确 `feature_memory` 是不是继续使用 `pretrained: false`。
+- 明确 `feature_memory` 基线是否继续使用当前冻结预训练特征语义：`weights: imagenet1k_v1`、`trainable: false`，以及对应的 `input_image_size` / `input_normalize` 设定。
   - 默认选择：不要再把它当官方强基线；官方比较应切到更可信的表征设置。
 - 检查 autoencoder 的训练预算与输入尺寸是否已经足以代表“正式 baseline”，而不是 smoke 版本。
 - 让这两条 classical baselines 在 3 个官方类别、3 seeds 下具备可重复结果。
