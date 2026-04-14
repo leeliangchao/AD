@@ -1,3 +1,5 @@
+import pytest
+
 from adrf.protocol.results import EvaluationSummary, TrainSummary
 
 
@@ -23,6 +25,14 @@ def test_train_summary_from_mapping_round_trips_existing_protocol_payload() -> N
     }
 
     assert TrainSummary.from_mapping(payload).to_dict() == payload
+
+
+def test_train_summary_to_dict_rejects_reserved_metric_keys() -> None:
+    summary = TrainSummary(num_train_batches=2, num_train_samples=5)
+    summary.metrics["num_train_batches"] = 99
+
+    with pytest.raises(ValueError, match="reserved"):
+        summary.to_dict()
 
 
 def test_evaluation_summary_to_dict_returns_metric_mapping() -> None:

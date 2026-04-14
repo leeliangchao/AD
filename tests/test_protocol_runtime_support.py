@@ -1,3 +1,4 @@
+import pytest
 from types import SimpleNamespace
 
 import torch
@@ -48,7 +49,7 @@ def test_temporarily_switch_modules_to_eval_restores_training_state() -> None:
     assert int(module.batch_norm.num_batches_tracked.item()) == before_batches
 
 
-def test_merge_distributed_train_summary_aggregates_counts_and_weighted_metrics(monkeypatch) -> None:
+def test_merge_distributed_train_summary_aggregates_counts_without_batch_weighting(monkeypatch) -> None:
     context = SimpleNamespace(enabled=True, world_size=2)
     summary = TrainSummary(
         num_train_batches=1,
@@ -67,8 +68,25 @@ def test_merge_distributed_train_summary_aggregates_counts_and_weighted_metrics(
     assert merge_distributed_train_summary(summary, context) == TrainSummary(
         num_train_batches=3,
         num_train_samples=5,
-        metrics={"loss": 3.0},
+        metrics={"loss": 2.5},
     )
+
+
+def test_merge_distributed_train_summary_raises_on_malformed_payload(monkeypatch) -> None:
+    context = SimpleNamespace(enabled=True, world_size=2)
+    summary = TrainSummary(
+        num_train_batches=1,
+        num_train_samples=2,
+        metrics={"loss": 1.0},
+    )
+
+    monkeypatch.setattr(
+        "adrf.protocol.runtime_support.all_gather_objects",
+        lambda payload, distributed_context: [payload, ["not", "a", "mapping"]],
+    )
+
+    with pytest.raises(TypeError, match="gathered payload"):
+        merge_distributed_train_summary(summary, context)
 
 
 def test_merge_distributed_evaluator_state_loads_merged_state(monkeypatch) -> None:

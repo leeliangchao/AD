@@ -46,21 +46,23 @@ def merge_distributed_train_summary(summary: TrainSummary, distributed_context: 
     gathered_payloads = all_gather_objects(summary.to_dict(), distributed_context)
     merged = TrainSummary()
     metric_totals: dict[str, float] = defaultdict(float)
-    metric_weights: dict[str, int] = defaultdict(int)
+    metric_counts: dict[str, int] = defaultdict(int)
 
     for payload in gathered_payloads:
         if not isinstance(payload, dict):
-            continue
+            raise TypeError(
+                f"merge_distributed_train_summary expected gathered payloads to be mappings; "
+                f"got {type(payload).__name__}"
+            )
         item = TrainSummary.from_mapping(payload)
         merged.num_train_batches += item.num_train_batches
         merged.num_train_samples += item.num_train_samples
-        weight = max(item.num_train_batches, 1)
         for key, value in item.metrics.items():
-            metric_totals[key] += float(value) * weight
-            metric_weights[key] += weight
+            metric_totals[key] += float(value)
+            metric_counts[key] += 1
 
     merged.metrics = {
-        key: total / max(metric_weights[key], 1)
+        key: total / max(metric_counts[key], 1)
         for key, total in metric_totals.items()
     }
     return merged
