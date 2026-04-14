@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
@@ -223,6 +224,16 @@ def move_sample_to_device(sample: Sample, device: torch.device, non_blocking: bo
     return sample
 
 
+def move_samples_to_device(
+    samples: Sequence[Sample],
+    device: torch.device,
+    non_blocking: bool = False,
+) -> list[Sample]:
+    """Move a batch of samples onto the target device in place."""
+
+    return [move_sample_to_device(sample, device, non_blocking=non_blocking) for sample in samples]
+
+
 class RuntimeRepresentationAdapter:
     """Move samples to the runtime device before delegating to a representation model."""
 
@@ -232,9 +243,55 @@ class RuntimeRepresentationAdapter:
         self.non_blocking = non_blocking
         self._move_representation_to_device()
 
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.representation, name)
+
     def __call__(self, sample: Sample) -> dict[str, Any]:
         move_sample_to_device(sample, self.device, non_blocking=self.non_blocking)
         return self.representation(sample)
+
+    def encode_sample(self, sample: Sample) -> Any:
+        move_sample_to_device(sample, self.device, non_blocking=self.non_blocking)
+        if hasattr(self.representation, "encode_sample"):
+            return self.representation.encode_sample(sample)
+        if hasattr(self.representation, "encode_batch"):
+            batch = self.representation.encode_batch([sample])
+            outputs = batch.unbind()
+            if len(outputs) != 1:
+                raise ValueError(
+                    f"{type(self.representation).__name__}.encode_sample expected exactly one output for one input sample, "
+                    f"got batch_size={batch.batch_size}."
+                )
+            return outputs[0]
+        raise TypeError(f"{type(self.representation).__name__} does not expose encode_sample() or encode_batch().")
+
+    def encode_batch(self, samples: Sequence[Sample]) -> Any:
+        moved_samples = move_samples_to_device(samples, self.device, non_blocking=self.non_blocking)
+        if hasattr(self.representation, "encode_batch"):
+            return self.representation.encode_batch(moved_samples)
+        if not moved_samples:
+            raise ValueError("encode_batch() requires at least one sample.")
+        outputs = [self.encode_sample(sample) for sample in moved_samples]
+        if not outputs:
+            raise ValueError("encode_batch() requires at least one sample.")
+        first_output = outputs[0]
+        if not hasattr(first_output, "provenance"):
+            raise TypeError(f"{type(self.representation).__name__} encode_sample() must return RepresentationOutput values.")
+        batch_tensor = torch.stack([output.tensor for output in outputs], dim=0)
+        from adrf.representation.contracts import RepresentationBatch
+
+        return RepresentationBatch(
+            tensor=batch_tensor,
+            space=first_output.space,
+            spatial_shape=first_output.spatial_shape,
+            feature_dim=first_output.feature_dim,
+            batch_size=len(outputs),
+            sample_ids=tuple(output.sample_id for output in outputs),
+            requires_grad=bool(batch_tensor.requires_grad),
+            device=str(batch_tensor.device),
+            dtype=str(batch_tensor.dtype),
+            provenance=first_output.provenance,
+        )
 
     def _move_representation_to_device(self) -> None:
         """Move known representation modules onto the runtime device."""

@@ -14,6 +14,7 @@ import numpy as np
 import torch
 
 from adrf.checkpoint.io import save_model_checkpoint
+from adrf.core.sample import Sample
 from adrf.data.datamodule import MVTecDataModule
 from adrf.evaluation.evaluator import BasicADEvaluator
 from adrf.evidence.conditional_violation import ConditionalViolationEvidence
@@ -147,6 +148,7 @@ class ExperimentRunner:
             registry=self.registry,
             group="normality",
         )
+        self._validate_representation_normality_contract()
         configure_trainable_runtime(
             self.normality,
             device=self.device,
@@ -170,6 +172,54 @@ class ExperimentRunner:
             registry=self.registry,
             group="protocol",
         )
+
+    def _validate_representation_normality_contract(self) -> None:
+        """Fail fast when representation outputs cannot satisfy the normality model contract."""
+
+        if self.representation is None or self.normality is None:
+            raise RuntimeError("Representation and normality must be instantiated before contract validation.")
+
+        representation_space = getattr(self.representation, "space", None)
+        accepted_spaces = getattr(self.normality, "accepted_spaces", frozenset())
+        if accepted_spaces and representation_space not in accepted_spaces:
+            accepted = ", ".join(f"`{candidate}`" for candidate in sorted(accepted_spaces))
+            raise ValueError(
+                f"{type(self.normality).__name__} requires representation space {accepted}; "
+                f"got `{representation_space}` from {type(getattr(self.representation, 'representation', self.representation)).__name__}."
+            )
+
+        probe_output = self.representation.encode_batch(self._make_contract_probe_batch()).unbind()[0]
+        accepted_tensor_ranks = getattr(self.normality, "accepted_tensor_ranks", frozenset())
+        if accepted_tensor_ranks and probe_output.tensor.ndim not in accepted_tensor_ranks:
+            accepted = ", ".join(str(rank) for rank in sorted(accepted_tensor_ranks))
+            raise ValueError(
+                f"{type(self.normality).__name__} requires representation tensor rank in {{{accepted}}}; "
+                f"got {probe_output.tensor.ndim} from {type(getattr(self.representation, 'representation', self.representation)).__name__}."
+            )
+
+        fit_mode = str(getattr(self.normality, "fit_mode", "offline"))
+        if (
+            fit_mode == "offline"
+            and bool(getattr(self.normality, "requires_detached_representation", False))
+            and probe_output.requires_grad
+        ):
+            raise ValueError(
+                f"{type(self.normality).__name__} requires detached representations for offline fit mode, "
+                f"but {type(getattr(self.representation, 'representation', self.representation)).__name__} emits a trainable representation."
+            )
+
+    def _make_contract_probe_batch(self) -> list[Sample]:
+        """Create lightweight samples for representation/normality compatibility checks."""
+
+        image_size = getattr(self.representation, "input_image_size", None)
+        if not isinstance(image_size, tuple) or len(image_size) != 2:
+            image_size_cfg = self.config.get("datamodule", {}).get("params", {}).get("image_size", (32, 32))
+            image_size = tuple(int(size) for size in image_size_cfg)
+        height, width = int(image_size[0]), int(image_size[1])
+        return [
+            Sample(image=torch.zeros(3, height, width), sample_id="__adrf_contract_probe__0"),
+            Sample(image=torch.zeros(3, height, width), sample_id="__adrf_contract_probe__1"),
+        ]
 
     def train(self) -> dict[str, Any]:
         """Run the training stage through the configured protocol."""

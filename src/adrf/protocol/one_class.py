@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import Any
 
 from adrf.protocol.base import BaseProtocol
@@ -15,19 +16,37 @@ class OneClassProtocol(BaseProtocol):
         """Collect train representations and fit the configured normality model."""
 
         dataloader = runner.datamodule.train_dataloader()
+        fit_mode = str(getattr(runner.normality, "fit_mode", "offline"))
+        if fit_mode not in {"offline", "joint"}:
+            raise ValueError(f"Unsupported normality fit mode: {fit_mode}")
+
         train_samples = []
         train_representations = []
         num_batches = 0
+        num_train_samples = 0
+        joint_metric_totals: dict[str, float] = defaultdict(float)
+        representation_model = getattr(runner.representation, "representation", runner.representation)
+        if fit_mode == "joint":
+            runner.normality.configure_joint_training(representation_model)
+
         for batch in dataloader:
             num_batches += 1
-            for sample in batch:
-                representation = runner.representation(sample)
-                train_samples.append(sample)
-                train_representations.append(representation)
+            num_train_samples += len(batch)
+            batch_representations = runner.representation.encode_batch(batch)
+            if fit_mode == "offline":
+                train_samples.extend(batch)
+                train_representations.extend(batch_representations.unbind())
+                continue
+
+            batch_metrics = runner.normality.fit_batch(batch_representations, batch)
+            for key, value in batch_metrics.items():
+                if isinstance(value, (int, float)):
+                    joint_metric_totals[str(key)] += float(value)
 
         distributed_context = getattr(runner, "distributed_context", None)
         if (
-            distributed_context is not None
+            fit_mode == "offline"
+            and distributed_context is not None
             and distributed_context.enabled
             and distributed_context.world_size > 1
             and not bool(getattr(runner, "distributed_training_enabled", False))
@@ -45,11 +64,20 @@ class OneClassProtocol(BaseProtocol):
                 train_samples.extend(payload.get("samples", []))
                 train_representations.extend(payload.get("representations", []))
 
-        runner.normality.fit(train_representations, train_samples)
-        return {
+        if fit_mode == "offline":
+            runner.normality.fit(train_representations, train_samples)
+            return {
+                "num_train_batches": num_batches,
+                "num_train_samples": len(train_samples),
+            }
+
+        train_summary: dict[str, Any] = {
             "num_train_batches": num_batches,
-            "num_train_samples": len(train_samples),
+            "num_train_samples": num_train_samples,
         }
+        for key, total in joint_metric_totals.items():
+            train_summary[key] = total / max(num_batches, 1)
+        return train_summary
 
     def evaluate(self, runner: Any) -> dict[str, float]:
         """Run the inference pipeline over the test split and compute metrics."""
@@ -57,8 +85,8 @@ class OneClassProtocol(BaseProtocol):
         runner.evaluator.reset()
         dataloader = runner.datamodule.test_dataloader()
         for batch in dataloader:
-            for sample in batch:
-                representation = runner.representation(sample)
+            batch_representations = runner.representation.encode_batch(batch).unbind()
+            for sample, representation in zip(batch, batch_representations, strict=True):
                 artifacts = runner.normality.infer(sample, representation)
                 prediction = runner.evidence.predict(sample, artifacts)
                 runner.evaluator.update(prediction, sample)
