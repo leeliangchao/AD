@@ -1,9 +1,13 @@
 name: real
-device: cuda
-amp: true
+
+device:
+  type: cuda
+  ids: [0,3]
+precision:
+  amp: true
+
 
 dataloader:
-  batch_size: 16
   num_workers: 4
   pin_memory: true
   persistent_workers: true
@@ -13,4 +17,3 @@ profiling:
   enabled: true
   record_timing: true
   record_memory: true
-

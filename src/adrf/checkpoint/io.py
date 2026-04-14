@@ -22,7 +22,7 @@ def save_model_checkpoint(model: object, path: str | Path) -> bool:
 
     checkpoint_path = Path(path)
     checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(model.state_dict(), checkpoint_path)
+    torch.save(_normalize_state_dict_keys(model.state_dict()), checkpoint_path)
     return True
 
 
@@ -35,5 +35,14 @@ def load_model_checkpoint(model: object, path: str | Path) -> bool:
 
     checkpoint_path = Path(path)
     state_dict = torch.load(checkpoint_path, map_location="cpu")
-    model.load_state_dict(state_dict)
+    model.load_state_dict(_normalize_state_dict_keys(state_dict))
     return True
+
+
+def _normalize_state_dict_keys(state_dict: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+    """Strip DDP-style `.module.` path segments from serialized state dict keys."""
+
+    return {
+        key.replace(".module.", "."): value
+        for key, value in state_dict.items()
+    }

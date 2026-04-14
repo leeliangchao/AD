@@ -1,25 +1,13 @@
 runtime_config: configs/runtime/real.yaml
 
-overrides:
-  trainer:
-    max_epochs: 10
-  dataloader:
-    batch_size: 32
-  optimization:
-    lr: 1.0e-4
-  dataset:
-    image_size: [256, 256]
-  normality:
-    backend: legacy
-
 datamodule:
   name: mvtec_single_class
   params:
     root: ../../data/mvtec
     category: bottle
-    image_size: [32, 32]
-    batch_size: 2
-    num_workers: 0
+    image_size: [256, 256]
+    batch_size: 16
+    num_workers: 4
     normalize: false
 
 representation:
@@ -31,14 +19,15 @@ normality:
   params:
     backend: legacy
     input_channels: 3
-    base_channels: 16
-    channel_mults: [1, 2, 2]
-    num_res_blocks: 2
-    time_embed_dim: 64
-    num_train_timesteps: 100
-    learning_rate: 0.001
-    epochs: 1
-    batch_size: 2
+    base_channels: 32
+    channel_mults: [1, 2, 4]
+    num_res_blocks: 3
+    time_embed_dim: 128
+    conditioning_hidden_dim: 256
+    num_train_timesteps: 250
+    learning_rate: 2.0e-4
+    epochs: 80
+    batch_size: 16
     noise_level: 0.2
 
 evidence:

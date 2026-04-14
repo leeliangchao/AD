@@ -22,6 +22,7 @@ normality:
     channel_mults: [1, 2, 2]
     num_res_blocks: 2
     time_embed_dim: 64
+    conditioning_hidden_dim: 96
     num_train_timesteps: 100
     learning_rate: 0.001
     epochs: 1
@@ -30,6 +31,8 @@ normality:
     num_steps: 6
     step_size: 0.1
     initial_noise_scale: 0.2
+    rollout_gain: 1.1
+    denoised_blend: 0.2
 
 evidence:
   name: direction_mismatch

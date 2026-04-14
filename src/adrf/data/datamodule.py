@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from torch.utils.data import DataLoader
+from torch.utils.data.distributed import DistributedSampler
 
 from adrf.core.sample import Sample
 from adrf.data.datasets.mvtec import MVTecSingleClassDataset
@@ -63,10 +64,12 @@ class MVTecDataModule:
         if self.train_dataset is None:
             self.setup()
         loader_runtime = self._loader_runtime()
+        sampler = self._distributed_sampler(self.train_dataset, shuffle=True)
         return DataLoader(
             self.train_dataset,
             batch_size=int(loader_runtime["batch_size"]),
-            shuffle=True,
+            shuffle=sampler is None,
+            sampler=sampler,
             num_workers=int(loader_runtime["num_workers"]),
             pin_memory=bool(loader_runtime["pin_memory"]),
             persistent_workers=bool(loader_runtime["persistent_workers"]),
@@ -79,10 +82,12 @@ class MVTecDataModule:
         if self.test_dataset is None:
             self.setup()
         loader_runtime = self._loader_runtime()
+        sampler = self._distributed_sampler(self.test_dataset, shuffle=False)
         return DataLoader(
             self.test_dataset,
             batch_size=int(loader_runtime["batch_size"]),
             shuffle=False,
+            sampler=sampler,
             num_workers=int(loader_runtime["num_workers"]),
             pin_memory=bool(loader_runtime["pin_memory"]),
             persistent_workers=bool(loader_runtime["persistent_workers"]),
@@ -101,4 +106,26 @@ class MVTecDataModule:
                 "persistent_workers": False,
                 "non_blocking": False,
             },
+        )
+
+    def _distributed_sampler(
+        self,
+        dataset: MVTecSingleClassDataset,
+        *,
+        shuffle: bool,
+    ) -> DistributedSampler[Sample] | None:
+        """Build a DistributedSampler when the runtime requests multi-process execution."""
+
+        distributed_cfg = (self.runtime or {}).get("distributed", {})
+        if not isinstance(distributed_cfg, dict):
+            return None
+        world_size = int(distributed_cfg.get("world_size", 1))
+        if world_size <= 1:
+            return None
+        rank = int(distributed_cfg.get("rank", 0))
+        return DistributedSampler(
+            dataset,
+            num_replicas=world_size,
+            rank=rank,
+            shuffle=shuffle,
         )

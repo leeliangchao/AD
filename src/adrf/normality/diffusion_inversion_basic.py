@@ -24,6 +24,7 @@ class DiffusionInversionBasicNormality(DiffusionBasicNormality):
         channel_mults: Sequence[int] | None = None,
         num_res_blocks: int = 2,
         time_embed_dim: int = 64,
+        conditioning_hidden_dim: int | None = None,
         num_train_timesteps: int = 100,
         learning_rate: float = 1e-3,
         epochs: int = 1,
@@ -32,6 +33,8 @@ class DiffusionInversionBasicNormality(DiffusionBasicNormality):
         num_steps: int = 4,
         step_size: float = 0.1,
         initial_noise_scale: float | None = None,
+        rollout_gain: float = 1.0,
+        denoised_blend: float = 0.0,
         backend: str = "legacy",
     ) -> None:
         super().__init__(
@@ -41,6 +44,7 @@ class DiffusionInversionBasicNormality(DiffusionBasicNormality):
             channel_mults=channel_mults,
             num_res_blocks=num_res_blocks,
             time_embed_dim=time_embed_dim,
+            conditioning_hidden_dim=conditioning_hidden_dim,
             num_train_timesteps=num_train_timesteps,
             learning_rate=learning_rate,
             epochs=epochs,
@@ -54,9 +58,15 @@ class DiffusionInversionBasicNormality(DiffusionBasicNormality):
             raise ValueError("step_size must be positive.")
         if initial_noise_scale is not None and initial_noise_scale <= 0:
             raise ValueError("initial_noise_scale must be positive when provided.")
+        if rollout_gain <= 0:
+            raise ValueError("rollout_gain must be positive.")
+        if not 0.0 <= denoised_blend <= 1.0:
+            raise ValueError("denoised_blend must be between 0 and 1.")
         self.num_steps = num_steps
         self.step_size = step_size
         self.initial_noise_scale = float(initial_noise_scale) if initial_noise_scale is not None else noise_level
+        self.rollout_gain = float(rollout_gain)
+        self.denoised_blend = float(denoised_blend)
 
     def infer(self, sample: Sample, representation: Mapping[str, Any]) -> NormalityArtifacts:
         """Run a fixed denoising trajectory and expose step-aligned process artifacts."""
@@ -67,18 +77,25 @@ class DiffusionInversionBasicNormality(DiffusionBasicNormality):
 
         with torch.no_grad():
             rollout_timesteps = self._rollout_timesteps(current_state.device)
+            rollout_scales = self._noise_scale_from_timesteps(rollout_timesteps)
             for step_index, timestep in enumerate(rollout_timesteps):
                 timestep_batch = timestep.expand(current_state.shape[0])
                 if self.backend == "diffusers":
                     self._ensure_diffusers_backend(sample_size=int(current_state.shape[-1]))
                     predicted_noise = self.diffusers_adapter.model(current_state, timestep_batch)
                 else:
-                    predicted_noise = self.denoiser(current_state, timestep_batch)
+                    current_noise_scale = rollout_scales[step_index].expand(current_state.shape[0])
+                    predicted_noise = self.denoiser(current_state, timestep_batch, current_noise_scale)
                 trajectory.append(current_state.squeeze(0).detach().clone())
                 step_costs.append(predicted_noise.abs().mean(dim=1).squeeze(0).detach().clone())
                 if step_index < self.num_steps - 1:
-                    rollout_scale = self._noise_scale_from_timesteps(timestep_batch).view(-1, 1, 1, 1)
-                    current_state = current_state - self.step_size * rollout_scale * predicted_noise
+                    rollout_scale = rollout_scales[step_index].view(-1, 1, 1, 1)
+                    next_scale = rollout_scales[step_index + 1].view(-1, 1, 1, 1)
+                    predicted_clean = current_state - rollout_scale * predicted_noise
+                    scale_delta = (rollout_scale - next_scale).clamp_min(0.0)
+                    current_state = current_state - self.step_size * self.rollout_gain * scale_delta * predicted_noise
+                    if self.denoised_blend > 0:
+                        current_state = (1.0 - self.denoised_blend) * current_state + self.denoised_blend * predicted_clean
 
         final_state = trajectory[-1]
         return NormalityArtifacts(
@@ -101,7 +118,10 @@ class DiffusionInversionBasicNormality(DiffusionBasicNormality):
                 "num_steps": self.num_steps,
                 "initial_noise_scale": self.initial_noise_scale,
                 "time_embed_dim": self.time_embed_dim,
+                "conditioning_hidden_dim": self.conditioning_hidden_dim,
                 "num_train_timesteps": self.num_train_timesteps,
+                "rollout_gain": self.rollout_gain,
+                "denoised_blend": self.denoised_blend,
                 "final_state_norm": float(final_state.norm().item()),
                 "step_summary": {
                     "first_step_cost_mean": float(step_costs[0].mean().item()),

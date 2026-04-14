@@ -16,7 +16,7 @@ from adrf.runner.experiment_runner import ExperimentRunner
 
 
 # Edit this filename when you want to right-click run a different experiment config.
-CONFIG_NAME = "diffusion_baseline_bottle_real.yaml"
+CONFIG_NAME = "diffusion_baseline.yaml"
 
 
 def resolve_config_path(config_name: str = CONFIG_NAME) -> Path:

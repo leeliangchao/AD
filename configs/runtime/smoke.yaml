@@ -1,9 +1,12 @@
 name: smoke
-device: auto
-amp: false
+
+device:
+  type: auto
+
+precision:
+  amp: false
 
 dataloader:
-  batch_size: 2
   num_workers: 0
   pin_memory: false
   persistent_workers: false
@@ -13,4 +16,3 @@ profiling:
   enabled: true
   record_timing: true
   record_memory: false
-
