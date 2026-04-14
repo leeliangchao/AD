@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from adrf.core.sample import Sample
@@ -51,3 +52,30 @@ def test_mvtec_single_class_dataset_returns_samples_for_train_and_test(tmp_path:
     assert anomaly_sample.metadata["defect_type"] == "broken_large"
     assert anomaly_sample.sample_id == "test/broken_large/002.png"
 
+
+def test_mvtec_single_class_dataset_caches_reference_image_per_dataset_instance(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The dataset should avoid reopening the fixed reference for every sample."""
+
+    root = tmp_path / "mvtec"
+    reference_path = root / "bottle" / "train" / "good" / "000.png"
+    _write_rgb_image(reference_path, (20, 30, 40))
+    _write_rgb_image(root / "bottle" / "train" / "good" / "001.png", (50, 60, 70))
+
+    open_calls: list[str] = []
+    original_open = Image.open
+
+    def tracking_open(path: str | Path, *args: object, **kwargs: object):
+        open_calls.append(str(Path(path)))
+        return original_open(path, *args, **kwargs)
+
+    monkeypatch.setattr("adrf.data.datasets.mvtec.Image.open", tracking_open)
+
+    dataset = MVTecSingleClassDataset(root=root, category="bottle", split="train", reference_index=1)
+    dataset[0]
+    dataset[0]
+
+    reference_opens = [path for path in open_calls if path == str(root / "bottle" / "train" / "good" / "001.png")]
+    assert len(reference_opens) == 1
