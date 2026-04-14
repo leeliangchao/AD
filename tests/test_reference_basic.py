@@ -22,11 +22,9 @@ def test_reference_basic_public_annotations_expose_representation_output_only() 
 
     fit_hints = get_type_hints(ReferenceBasicNormality.fit)
     infer_hints = get_type_hints(ReferenceBasicNormality.infer)
-    helper_hints = get_type_hints(ReferenceBasicNormality._prepare_reference_tensor)
 
     assert fit_hints["representations"] == Iterable[RepresentationOutput]
     assert infer_hints["representation"] is RepresentationOutput
-    assert helper_hints["representation"] is RepresentationOutput
 
 
 def test_reference_basic_fit_and_infer_accept_representation_output() -> None:
@@ -93,3 +91,49 @@ def test_reference_basic_accepts_pil_reference_fallback() -> None:
 
     assert artifacts.get_primary("reference_projection").shape == (3, 16, 16)
     assert artifacts.representation["sample_id"] == "sample-pil"
+
+
+def test_reference_basic_legacy_mapping_emits_normalized_representation_payload() -> None:
+    """ReferenceBasicNormality should normalize legacy mapping inputs in emitted artifacts."""
+
+    generator = torch.Generator().manual_seed(0)
+    samples = [
+        Sample(
+            image=torch.rand(3, 16, 16, generator=generator),
+            reference=torch.rand(3, 16, 16, generator=generator),
+            sample_id=f"legacy-{index:03d}",
+        )
+        for index in range(2)
+    ]
+    typed_representations = [make_pixel_output(sample.image, sample_id=sample.sample_id or "sample") for sample in samples]
+    representations = [
+        {
+            "representation": representation.tensor,
+            "space_type": "pixel",
+            "spatial_shape": representation.spatial_shape,
+            "feature_dim": representation.feature_dim,
+            "sample_id": representation.sample_id,
+            "requires_grad": representation.requires_grad,
+            "device": representation.device,
+            "dtype": representation.dtype,
+            "provenance": representation.provenance,
+        }
+        for representation in typed_representations
+    ]
+    expected_representation = {
+        "tensor": typed_representations[0].tensor,
+        "space": typed_representations[0].space,
+        "spatial_shape": typed_representations[0].spatial_shape,
+        "feature_dim": typed_representations[0].feature_dim,
+        "sample_id": typed_representations[0].sample_id,
+        "requires_grad": typed_representations[0].requires_grad,
+        "device": typed_representations[0].device,
+        "dtype": typed_representations[0].dtype,
+        "provenance": typed_representations[0].provenance.to_dict(),
+    }
+    model = ReferenceBasicNormality(input_channels=3, hidden_channels=4, epochs=1, batch_size=1)
+
+    model.fit(representations, samples)
+    artifacts = model.infer(samples[0], representations[0])
+
+    assert artifacts.representation == expected_representation

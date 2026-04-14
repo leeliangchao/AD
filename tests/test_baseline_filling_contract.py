@@ -172,8 +172,7 @@ def test_filled_diffusion_family_accepts_capacity_and_process_parameters() -> No
     }
     assert reference_artifacts.get_aux("predicted_noise").shape == (3, 16, 16)
     assert reference_artifacts.get_primary("reference_projection").shape == (3, 16, 16)
-    assert reference_artifacts.representation["space"] == "pixel"
-    assert reference_artifacts.representation["sample_id"] == "ref-001"
+    assert reference_artifacts.representation == reference_representations[0].to_artifact_dict()
 
 
 def test_filled_classical_and_conditional_baselines_preserve_artifact_contracts() -> None:
@@ -232,8 +231,7 @@ def test_filled_classical_and_conditional_baselines_preserve_artifact_contracts(
     assert reference_artifacts.capabilities == {"reference_projection", "conditional_alignment"}
     assert reference_artifacts.get_primary("reference_projection").shape == (3, 16, 16)
     assert reference_artifacts.get_aux("conditional_alignment").shape == (16, 16)
-    assert reference_artifacts.representation["space"] == "pixel"
-    assert reference_artifacts.representation["sample_id"] == "rb-001"
+    assert reference_artifacts.representation == reference_representations[0].to_artifact_dict()
 
 
 def test_filled_matrix_configs_expand_to_expected_contract_sizes() -> None:
