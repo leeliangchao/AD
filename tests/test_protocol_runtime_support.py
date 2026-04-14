@@ -49,7 +49,37 @@ def test_temporarily_switch_modules_to_eval_restores_training_state() -> None:
     assert int(module.batch_norm.num_batches_tracked.item()) == before_batches
 
 
-def test_merge_distributed_train_summary_aggregates_counts_without_batch_weighting(monkeypatch) -> None:
+def test_merge_distributed_train_summary_uses_explicit_metric_weights(monkeypatch) -> None:
+    context = SimpleNamespace(enabled=True, world_size=2)
+    summary = TrainSummary(
+        num_train_batches=1,
+        num_train_samples=2,
+        metrics={"loss": 1.0},
+        metric_weights={"loss": 2.0},
+    )
+    other = TrainSummary(
+        num_train_batches=2,
+        num_train_samples=3,
+        metrics={"loss": 4.0},
+        metric_weights={"loss": 1.0},
+    )
+
+    monkeypatch.setattr(
+        "adrf.protocol.runtime_support.all_gather_objects",
+        lambda payload, distributed_context: [payload, other],
+    )
+
+    merged = merge_distributed_train_summary(summary, context)
+
+    assert merged.to_dict() == {
+        "num_train_batches": 3,
+        "num_train_samples": 5,
+        "loss": 2.0,
+    }
+    assert merged.metric_weights == {"loss": 3.0}
+
+
+def test_merge_distributed_train_summary_raises_without_explicit_metric_weights(monkeypatch) -> None:
     context = SimpleNamespace(enabled=True, world_size=2)
     summary = TrainSummary(
         num_train_batches=1,
@@ -59,17 +89,11 @@ def test_merge_distributed_train_summary_aggregates_counts_without_batch_weighti
 
     monkeypatch.setattr(
         "adrf.protocol.runtime_support.all_gather_objects",
-        lambda payload, distributed_context: [
-            payload,
-            {"num_train_batches": 2, "num_train_samples": 3, "loss": 4.0},
-        ],
+        lambda payload, distributed_context: [payload],
     )
 
-    assert merge_distributed_train_summary(summary, context) == TrainSummary(
-        num_train_batches=3,
-        num_train_samples=5,
-        metrics={"loss": 2.5},
-    )
+    with pytest.raises(ValueError, match="explicit metric weights"):
+        merge_distributed_train_summary(summary, context)
 
 
 def test_merge_distributed_train_summary_raises_on_malformed_payload(monkeypatch) -> None:
@@ -78,6 +102,7 @@ def test_merge_distributed_train_summary_raises_on_malformed_payload(monkeypatch
         num_train_batches=1,
         num_train_samples=2,
         metrics={"loss": 1.0},
+        metric_weights={"loss": 1.0},
     )
 
     monkeypatch.setattr(

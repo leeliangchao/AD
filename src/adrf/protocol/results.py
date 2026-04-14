@@ -12,6 +12,7 @@ class TrainSummary:
     num_train_batches: int = 0
     num_train_samples: int = 0
     metrics: dict[str, float] = field(default_factory=dict)
+    metric_weights: dict[str, float] = field(default_factory=dict, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         self._validate_metrics(self.metrics)

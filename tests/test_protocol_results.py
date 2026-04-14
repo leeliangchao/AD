@@ -35,6 +35,21 @@ def test_train_summary_to_dict_rejects_reserved_metric_keys() -> None:
         summary.to_dict()
 
 
+def test_train_summary_to_dict_ignores_internal_metric_weights() -> None:
+    summary = TrainSummary(
+        num_train_batches=2,
+        num_train_samples=5,
+        metrics={"loss": 0.25},
+    )
+    summary.metric_weights["loss"] = 10.0
+
+    assert summary.to_dict() == {
+        "num_train_batches": 2,
+        "num_train_samples": 5,
+        "loss": 0.25,
+    }
+
+
 def test_evaluation_summary_to_dict_returns_metric_mapping() -> None:
     summary = EvaluationSummary(metrics={"image_auroc": 0.9, "pixel_auroc": 0.8})
 
