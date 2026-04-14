@@ -31,7 +31,14 @@ class RepresentationModel(ABC):
         """Produce one batched representation payload."""
 
     def encode_sample(self, sample: Sample) -> RepresentationOutput:
-        return self.encode_batch([sample]).unbind()[0]
+        batch = self.encode_batch([sample])
+        outputs = batch.unbind()
+        if len(outputs) != 1:
+            raise ValueError(
+                f"{type(self).__name__}.encode_sample expected exactly one output for one input sample, "
+                f"got batch_size={batch.batch_size}."
+            )
+        return outputs[0]
 
     @abstractmethod
     def describe(self) -> RepresentationProvenance:

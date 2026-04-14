@@ -54,6 +54,33 @@ class RepresentationOutput:
     dtype: str
     provenance: RepresentationProvenance
 
+    def __post_init__(self) -> None:
+        self.validate()
+
+    def validate(self) -> None:
+        if self.provenance.representation_name != self.space:
+            raise ValueError(
+                "RepresentationOutput metadata mismatch: provenance.representation_name must match output space."
+            )
+        if self.spatial_shape is None:
+            if self.tensor.ndim != 1:
+                raise ValueError("RepresentationOutput tensor must have canonical non-spatial rank 1.")
+        else:
+            if self.tensor.ndim != 3:
+                raise ValueError("RepresentationOutput tensor must have canonical spatial rank 3.")
+            if tuple(self.tensor.shape[-2:]) != self.spatial_shape:
+                raise ValueError(
+                    "RepresentationOutput metadata mismatch: spatial_shape must match tensor spatial dimensions."
+                )
+        if self.tensor.shape[0] != self.feature_dim:
+            raise ValueError("RepresentationOutput metadata mismatch: feature_dim must match tensor feature dimension.")
+        if str(self.tensor.device) != self.device:
+            raise ValueError("RepresentationOutput metadata mismatch: device must match tensor.device.")
+        if str(self.tensor.dtype) != self.dtype:
+            raise ValueError("RepresentationOutput metadata mismatch: dtype must match tensor.dtype.")
+        if self.tensor.requires_grad != self.requires_grad:
+            raise ValueError("RepresentationOutput metadata mismatch: requires_grad must match tensor.requires_grad.")
+
     def to_artifact_dict(self) -> dict[str, Any]:
         return {
             "tensor": self.tensor,
