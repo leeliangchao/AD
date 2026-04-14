@@ -27,13 +27,14 @@ class SampleTransform:
 
         image = self._transform_image(sample.image)
         mask = self._transform_mask(sample.mask)
+        reference = self._transform_reference(sample.reference)
         return Sample(
             image=image,
             label=sample.label,
             mask=mask,
             category=sample.category,
             sample_id=sample.sample_id,
-            reference=sample.reference,
+            reference=reference,
             views=dict(sample.views) if sample.views is not None else None,
             metadata=dict(sample.metadata),
         )
@@ -66,6 +67,13 @@ class SampleTransform:
         if self.normalize:
             tensor = tv_functional.normalize(tensor, self.mean, self.std)
         return tensor
+
+    def _transform_reference(self, reference: Image.Image | torch.Tensor | None) -> torch.Tensor | None:
+        """Resize and convert a reference image using the same policy as the sample image."""
+
+        if reference is None:
+            return None
+        return self._transform_image(reference)
 
     def _transform_mask(self, mask: Image.Image | torch.Tensor | None) -> torch.Tensor | None:
         """Resize and convert a mask into a float tensor when present."""
@@ -109,4 +117,3 @@ def build_sample_transform(
     """Construct the default sample transform for MVTec inputs."""
 
     return SampleTransform(image_size=image_size, normalize=normalize, mean=mean, std=std)
-
