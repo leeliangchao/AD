@@ -69,10 +69,13 @@ class OneClassProtocol(BaseProtocol):
 
         if fit_mode == "offline":
             runner.normality.fit(train_representations, train_samples)
-            return {
-                "num_train_batches": num_batches,
-                "num_train_samples": len(train_samples),
-            }
+            return _merge_distributed_train_summary(
+                {
+                    "num_train_batches": num_batches,
+                    "num_train_samples": num_train_samples,
+                },
+                distributed_context,
+            )
 
         train_summary: dict[str, Any] = {
             "num_train_batches": num_batches,
@@ -80,7 +83,7 @@ class OneClassProtocol(BaseProtocol):
         }
         for key, total in joint_metric_totals.items():
             train_summary[key] = total / max(num_batches, 1)
-        return train_summary
+        return _merge_distributed_train_summary(train_summary, distributed_context)
 
     def evaluate(self, runner: Any) -> dict[str, float]:
         """Run the inference pipeline over the test split and compute metrics."""
@@ -108,6 +111,58 @@ class OneClassProtocol(BaseProtocol):
             merged_state = runner.evaluator.merge_states(gathered_states)
             runner.evaluator.load_state_dict(merged_state)
         return runner.evaluator.compute()
+
+
+def _merge_distributed_train_summary(
+    train_summary: dict[str, Any],
+    distributed_context: Any,
+) -> dict[str, Any]:
+    """Aggregate per-rank train summaries into one global protocol result."""
+
+    if (
+        distributed_context is None
+        or not getattr(distributed_context, "enabled", False)
+        or getattr(distributed_context, "world_size", 1) <= 1
+    ):
+        return train_summary
+
+    gathered_summaries = all_gather_objects(train_summary, distributed_context)
+    merged_summary = {
+        "num_train_batches": 0,
+        "num_train_samples": 0,
+    }
+    metric_totals: dict[str, float] = defaultdict(float)
+    metric_weights: dict[str, int] = defaultdict(int)
+
+    for payload in gathered_summaries:
+        if not isinstance(payload, dict):
+            continue
+
+        num_train_batches = _coerce_summary_int(payload.get("num_train_batches"))
+        num_train_samples = _coerce_summary_int(payload.get("num_train_samples"))
+        merged_summary["num_train_batches"] += num_train_batches
+        merged_summary["num_train_samples"] += num_train_samples
+
+        metric_weight = max(num_train_batches, 1)
+        for key, value in payload.items():
+            if key in {"num_train_batches", "num_train_samples"}:
+                continue
+            if isinstance(value, (int, float)):
+                metric_totals[str(key)] += float(value) * metric_weight
+                metric_weights[str(key)] += metric_weight
+
+    for key, total in metric_totals.items():
+        merged_summary[key] = total / max(metric_weights[key], 1)
+
+    return merged_summary
+
+
+def _coerce_summary_int(value: object) -> int:
+    """Normalize numeric train-summary counters to plain ints."""
+
+    if isinstance(value, (int, float)):
+        return int(value)
+    return 0
 
 
 @contextmanager
