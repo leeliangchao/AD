@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any, TypeAlias
+from typing import Any, Literal, TypeAlias
+
+RepresentationSpace: TypeAlias = Literal["pixel", "feature"]
 
 DataDict: TypeAlias = dict[str, Any]
 MetadataDict: TypeAlias = dict[str, Any]
 ViewsDict: TypeAlias = dict[str, Any]
 CapabilitySet: TypeAlias = set[str]
-

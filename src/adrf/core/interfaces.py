@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Iterable, Mapping
-from typing import Any
+from collections.abc import Iterable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Literal
 
 from adrf.core.artifacts import NormalityArtifacts
 from adrf.core.sample import Sample
+
+if TYPE_CHECKING:
+    from adrf.representation.contracts import RepresentationBatch, RepresentationOutput, RepresentationProvenance
 
 
 class Representation(ABC):
@@ -18,19 +21,46 @@ class Representation(ABC):
         """Produce a representation for a single sample."""
 
 
+class RepresentationModel(ABC):
+    space: str
+    trainable: bool
+
+    @abstractmethod
+    def encode_batch(self, samples: Sequence[Sample]) -> RepresentationBatch:
+        """Produce one batched representation payload."""
+
+    def encode_sample(self, sample: Sample) -> RepresentationOutput:
+        return self.encode_batch([sample]).unbind()[0]
+
+    @abstractmethod
+    def describe(self) -> RepresentationProvenance:
+        """Return the static provenance carried by this representation."""
+
+
 class NormalityModel(ABC):
-    """Learn normality from representations and emit standardized artifacts."""
+    fit_mode: Literal["offline", "joint"] = "offline"
+    accepted_spaces: frozenset[str] = frozenset()
+    accepted_tensor_ranks: frozenset[int] = frozenset()
+    requires_detached_representation: bool = True
 
     @abstractmethod
     def fit(
         self,
-        representations: Iterable[Mapping[str, Any]],
+        representations: Iterable[RepresentationOutput],
         samples: Iterable[Sample] | None = None,
     ) -> None:
         """Fit the model using normal training representations."""
 
+    def configure_joint_training(self, representation_model: Any) -> None:
+        del representation_model
+        raise RuntimeError(f"{type(self).__name__} does not implement joint training.")
+
+    def fit_batch(self, representations: RepresentationBatch, samples: Sequence[Sample]) -> dict[str, float]:
+        del representations, samples
+        raise RuntimeError(f"{type(self).__name__} does not implement fit_batch().")
+
     @abstractmethod
-    def infer(self, sample: Sample, representation: Mapping[str, Any]) -> NormalityArtifacts:
+    def infer(self, sample: Sample, representation: RepresentationOutput) -> NormalityArtifacts:
         """Infer normality artifacts for a represented sample."""
 
 
