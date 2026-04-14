@@ -12,6 +12,7 @@ from typing import Any
 
 import numpy as np
 import torch
+from torch import nn
 
 from adrf.checkpoint.io import save_model_checkpoint
 from adrf.core.sample import Sample
@@ -188,7 +189,7 @@ class ExperimentRunner:
                 f"got `{representation_space}` from {type(getattr(self.representation, 'representation', self.representation)).__name__}."
             )
 
-        probe_output = self.representation.encode_batch(self._make_contract_probe_batch()).unbind()[0]
+        probe_output = self._probe_representation_contract_output()
         accepted_tensor_ranks = getattr(self.normality, "accepted_tensor_ranks", frozenset())
         if accepted_tensor_ranks and probe_output.tensor.ndim not in accepted_tensor_ranks:
             accepted = ", ".join(str(rank) for rank in sorted(accepted_tensor_ranks))
@@ -207,6 +208,24 @@ class ExperimentRunner:
                 f"{type(self.normality).__name__} requires detached representations for offline fit mode, "
                 f"but {type(getattr(self.representation, 'representation', self.representation)).__name__} emits a trainable representation."
             )
+
+    def _probe_representation_contract_output(self) -> Any:
+        """Inspect one representation output without mutating representation training state."""
+
+        if self.representation is None:
+            raise RuntimeError("Representation must be instantiated before probing its contract.")
+
+        representation_model = getattr(self.representation, "representation", self.representation)
+        if not isinstance(representation_model, nn.Module):
+            return self.representation.encode_batch(self._make_contract_probe_batch()).unbind()[0]
+
+        training_states = {module: module.training for module in representation_model.modules()}
+        try:
+            representation_model.eval()
+            return self.representation.encode_batch(self._make_contract_probe_batch()).unbind()[0]
+        finally:
+            for module, was_training in training_states.items():
+                module.train(was_training)
 
     def _make_contract_probe_batch(self) -> list[Sample]:
         """Create lightweight samples for representation/normality compatibility checks."""

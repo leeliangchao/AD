@@ -73,6 +73,48 @@ class _OfflineToyNormality(nn.Module, BaseNormalityModel):
         raise AssertionError("test does not exercise inference.")
 
 
+class _BatchNormFeatureRepresentation(BaseRepresentation):
+    space = "feature"
+    trainable = True
+
+    def __init__(self) -> None:
+        super().__init__(input_image_size=(32, 32), input_normalize=False)
+        self.batch_norm = nn.BatchNorm2d(1)
+
+    def _encode_tensor_batch(self, batch: torch.Tensor) -> torch.Tensor:
+        return self.batch_norm(batch[:, :1, :, :])
+
+    def describe(self) -> RepresentationProvenance:
+        return RepresentationProvenance(
+            representation_name="feature",
+            backbone_name="toy-bn",
+            weights_source=None,
+            feature_layer="batch_norm",
+            pooling=None,
+            trainable=True,
+            frozen_submodules=(),
+            input_image_size=self.input_image_size,
+            input_normalize=self.input_normalize,
+            normalize_mean=None,
+            normalize_std=None,
+            code_version="tests",
+            config_fingerprint="runner-toy-batchnorm-feature",
+        )
+
+
+class _CompatibleToyNormality(nn.Module, BaseNormalityModel):
+    accepted_spaces = frozenset({"feature"})
+    accepted_tensor_ranks = frozenset({3})
+    requires_detached_representation = False
+
+    def fit(self, representations, samples=None) -> None:
+        del representations, samples
+
+    def infer(self, sample, representation):
+        del sample, representation
+        raise AssertionError("test does not exercise inference.")
+
+
 def _write_runner_config(config_path: Path, dataset_root: Path, *, representation_name: str, normality_name: str) -> None:
     config_path.write_text(
         "\n".join(
@@ -182,3 +224,32 @@ def test_experiment_runner_rejects_trainable_offline_representation_contract(tmp
 
     with pytest.raises(ValueError, match="trainable representation"):
         runner.setup()
+
+
+def test_experiment_runner_setup_validation_does_not_mutate_trainable_representation_state(tmp_path: Path) -> None:
+    """ExperimentRunner setup validation should preserve trainable representation state."""
+
+    dataset_root = tmp_path / "mvtec"
+    _write_fixture_dataset(dataset_root)
+    config_path = tmp_path / "stateful_contract.yaml"
+    _write_runner_config(
+        config_path,
+        dataset_root,
+        representation_name="batchnorm_feature",
+        normality_name="compatible_toy",
+    )
+    registry = build_default_registry()
+    registry.register("representation", "batchnorm_feature", _BatchNormFeatureRepresentation)
+    registry.register("normality", "compatible_toy", _CompatibleToyNormality)
+
+    runner = ExperimentRunner(config_path, registry=registry)
+    representation = _BatchNormFeatureRepresentation()
+    runner.representation = representation
+    runner.normality = _CompatibleToyNormality()
+    before_batches = int(representation.batch_norm.num_batches_tracked.item())
+
+    runner._validate_representation_normality_contract()
+
+    assert representation.training is True
+    assert representation.batch_norm.training is True
+    assert int(representation.batch_norm.num_batches_tracked.item()) == before_batches
