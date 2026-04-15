@@ -5,7 +5,7 @@ from collections import defaultdict
 
 from adrf.protocol.context import ProtocolContext
 from adrf.protocol.results import TrainSummary
-from adrf.protocol.runtime_support import merge_distributed_train_summary
+from adrf.protocol import runtime_support
 from adrf.utils.distributed import all_gather_objects
 
 
@@ -49,7 +49,7 @@ class OfflineTrainingStrategy(TrainingStrategy):
                 train_representations.extend(payload.get("representations", []))
 
         context.normality.fit(train_representations, train_samples)
-        return merge_distributed_train_summary(
+        return runtime_support.merge_distributed_train_summary(
             TrainSummary(
                 num_train_batches=num_batches,
                 num_train_samples=num_train_samples,
@@ -65,6 +65,7 @@ class JointTrainingStrategy(TrainingStrategy):
         num_batches = 0
         num_train_samples = 0
         metric_totals: dict[str, float] = defaultdict(float)
+        metric_counts: dict[str, int] = defaultdict(int)
 
         for batch in context.train_loader:
             num_batches += 1
@@ -73,21 +74,23 @@ class JointTrainingStrategy(TrainingStrategy):
             batch_metrics = context.normality.fit_batch(batch_representations, batch)
             for key, value in batch_metrics.items():
                 if isinstance(value, (int, float)):
-                    metric_totals[str(key)] += float(value)
+                    metric_key = str(key)
+                    metric_totals[metric_key] += float(value)
+                    metric_counts[metric_key] += 1
 
         summary = TrainSummary(
             num_train_batches=num_batches,
             num_train_samples=num_train_samples,
             metrics={
-                key: total / max(num_batches, 1)
+                key: total / max(metric_counts[key], 1)
                 for key, total in metric_totals.items()
             },
             metric_weights={
-                key: float(num_batches)
+                key: float(metric_counts[key])
                 for key in metric_totals
             },
         )
-        return merge_distributed_train_summary(summary, context.distributed_context)
+        return runtime_support.merge_distributed_train_summary(summary, context.distributed_context)
 
 
 def resolve_training_strategy(context: ProtocolContext) -> TrainingStrategy:

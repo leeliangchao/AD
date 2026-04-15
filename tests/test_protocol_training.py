@@ -87,6 +87,25 @@ class _JointNormality(nn.Module):
         return {"loss": float(self.fit_batch_calls)}
 
 
+class _SequenceJointNormality(nn.Module):
+    fit_mode = "joint"
+
+    def __init__(self, batch_metrics: list[dict[str, float]]) -> None:
+        super().__init__()
+        self.batch_metrics = batch_metrics
+        self.configured_with = None
+        self.fit_batch_calls = 0
+
+    def configure_joint_training(self, representation_model) -> None:
+        self.configured_with = representation_model
+
+    def fit_batch(self, representations, samples) -> dict[str, float]:
+        del representations, samples
+        metrics = self.batch_metrics[self.fit_batch_calls]
+        self.fit_batch_calls += 1
+        return metrics
+
+
 def _make_context(normality, *, distributed_context=None, distributed_training_enabled=False) -> ProtocolContext:
     representation = _Representation()
     samples = _make_samples("train", 2)
@@ -115,7 +134,6 @@ def test_offline_training_strategy_fits_gathered_representations_and_merges_summ
         distributed_training_enabled=False,
     )
     remote_samples = _make_samples("remote", 3)
-    merge_calls = []
 
     monkeypatch.setattr(
         "adrf.protocol.training.all_gather_objects",
@@ -128,9 +146,11 @@ def test_offline_training_strategy_fits_gathered_representations_and_merges_summ
         ],
     )
     monkeypatch.setattr(
-        "adrf.protocol.training.merge_distributed_train_summary",
-        lambda summary, distributed_context: merge_calls.append((summary, distributed_context))
-        or TrainSummary(num_train_batches=3, num_train_samples=5, metrics={}),
+        "adrf.protocol.runtime_support.all_gather_objects",
+        lambda payload, distributed_context: [
+            payload,
+            TrainSummary(num_train_batches=2, num_train_samples=3),
+        ],
     )
 
     summary = OfflineTrainingStrategy().train(context)
@@ -139,44 +159,38 @@ def test_offline_training_strategy_fits_gathered_representations_and_merges_summ
     assert len(normality.fit_calls) == 1
     assert len(normality.fit_calls[0][0]) == 5
     assert len(normality.fit_calls[0][1]) == 5
-    assert merge_calls == [
-        (
-            TrainSummary(num_train_batches=1, num_train_samples=2, metrics={}),
-            context.distributed_context,
-        )
-    ]
 
 
-def test_joint_training_strategy_configures_normality_and_averages_batch_metrics(monkeypatch) -> None:
-    normality = _JointNormality()
-    context = _make_context(normality)
-    merge_calls = []
-
-    def _merge(summary, distributed_context):
-        merge_calls.append((summary, distributed_context))
-        return summary
-
-    monkeypatch.setattr("adrf.protocol.training.merge_distributed_train_summary", _merge)
+def test_joint_training_strategy_tracks_per_metric_batch_counts() -> None:
+    normality = _SequenceJointNormality(
+        [
+            {"loss": 2.0, "aux": 4.0},
+            {"loss": 6.0},
+        ]
+    )
+    representation = _Representation()
+    context = ProtocolContext(
+        train_loader=[
+            _make_samples("train", 2),
+            _make_samples("train-extra", 1),
+        ],
+        test_loader=[],
+        representation=representation,
+        normality=normality,
+        evidence=object(),
+        evaluator=object(),
+        distributed_context=None,
+        distributed_training_enabled=False,
+    )
 
     summary = JointTrainingStrategy().train(context)
 
     assert normality.configured_with is context.representation.representation
-    assert normality.fit_batch_calls == 1
-    assert summary.metric_weights == {"loss": 1.0}
+    assert normality.fit_batch_calls == 2
+    assert summary.metric_weights == {"loss": 2.0, "aux": 1.0}
     assert summary == TrainSummary(
-        num_train_batches=1,
-        num_train_samples=2,
-        metrics={"loss": 1.0},
-        metric_weights={"loss": 1.0},
+        num_train_batches=2,
+        num_train_samples=3,
+        metrics={"loss": 4.0, "aux": 4.0},
+        metric_weights={"loss": 2.0, "aux": 1.0},
     )
-    assert merge_calls == [
-        (
-            TrainSummary(
-                num_train_batches=1,
-                num_train_samples=2,
-                metrics={"loss": 1.0},
-                metric_weights={"loss": 1.0},
-            ),
-            context.distributed_context,
-        )
-    ]
