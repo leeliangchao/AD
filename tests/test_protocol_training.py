@@ -162,10 +162,12 @@ def test_joint_training_strategy_configures_normality_and_averages_batch_metrics
 
     assert normality.configured_with is context.representation.representation
     assert normality.fit_batch_calls == 1
+    assert summary.metric_weights == {"loss": 1.0}
     assert summary == TrainSummary(
         num_train_batches=1,
         num_train_samples=2,
         metrics={"loss": 1.0},
+        metric_weights={"loss": 1.0},
     )
     assert merge_calls == [
         (
@@ -173,6 +175,7 @@ def test_joint_training_strategy_configures_normality_and_averages_batch_metrics
                 num_train_batches=1,
                 num_train_samples=2,
                 metrics={"loss": 1.0},
+                metric_weights={"loss": 1.0},
             ),
             context.distributed_context,
         )

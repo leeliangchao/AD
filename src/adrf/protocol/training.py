@@ -82,6 +82,10 @@ class JointTrainingStrategy(TrainingStrategy):
                 key: total / max(num_batches, 1)
                 for key, total in metric_totals.items()
             },
+            metric_weights={
+                key: float(num_batches)
+                for key in metric_totals
+            },
         )
         return merge_distributed_train_summary(summary, context.distributed_context)
 
