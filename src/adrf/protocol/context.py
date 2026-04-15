@@ -20,7 +20,7 @@ class ProtocolContext:
         return getattr(self.representation, "representation", self.representation)
 
     @classmethod
-    def from_runner(cls, runner: Any) -> "ProtocolContext":
+    def from_runner(cls, runner: Any, phase: str | None = None) -> "ProtocolContext":
         datamodule = getattr(runner, "datamodule", None)
         if datamodule is None:
             raise RuntimeError("ProtocolContext requires runner.datamodule.")
@@ -33,20 +33,41 @@ class ProtocolContext:
         if normality is None:
             raise RuntimeError("ProtocolContext requires runner.normality.")
 
-        evidence = getattr(runner, "evidence", None)
-        if evidence is None:
-            raise RuntimeError("ProtocolContext requires runner.evidence.")
+        if phase not in {None, "train", "evaluate"}:
+            raise RuntimeError(f"ProtocolContext does not support phase={phase!r}.")
 
-        evaluator = getattr(runner, "evaluator", None)
-        if evaluator is None:
-            raise RuntimeError("ProtocolContext requires runner.evaluator.")
+        if phase in {None, "evaluate"}:
+            evidence = getattr(runner, "evidence", None)
+            if evidence is None:
+                raise RuntimeError("ProtocolContext requires runner.evidence.")
 
-        if not hasattr(datamodule, "train_dataloader") or not hasattr(datamodule, "test_dataloader"):
-            raise RuntimeError("ProtocolContext requires train_dataloader() and test_dataloader() on the datamodule.")
+            evaluator = getattr(runner, "evaluator", None)
+            if evaluator is None:
+                raise RuntimeError("ProtocolContext requires runner.evaluator.")
+        else:
+            evidence = getattr(runner, "evidence", None)
+            evaluator = getattr(runner, "evaluator", None)
+
+        train_loader = None
+        test_loader = None
+        if phase in {None, "train"}:
+            if not hasattr(datamodule, "train_dataloader"):
+                raise RuntimeError("ProtocolContext requires train_dataloader() on the datamodule.")
+            train_loader = datamodule.train_dataloader()
+        if phase in {None, "evaluate"}:
+            if not hasattr(datamodule, "test_dataloader"):
+                raise RuntimeError("ProtocolContext requires test_dataloader() on the datamodule.")
+            test_loader = datamodule.test_dataloader()
+
+        if phase is None:
+            if evidence is None:
+                raise RuntimeError("ProtocolContext requires runner.evidence.")
+            if evaluator is None:
+                raise RuntimeError("ProtocolContext requires runner.evaluator.")
 
         return cls(
-            train_loader=datamodule.train_dataloader(),
-            test_loader=datamodule.test_dataloader(),
+            train_loader=train_loader,
+            test_loader=test_loader,
             representation=representation,
             normality=normality,
             evidence=evidence,

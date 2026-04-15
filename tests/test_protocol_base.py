@@ -36,6 +36,21 @@ class _LegacyProtocol(BaseProtocol):
         return {"image_auroc": 0.7}
 
 
+class _MixedProtocol(BaseProtocol):
+    def train(self, context):
+        return TrainSummary(
+            num_train_batches=2,
+            num_train_samples=3,
+            metrics={"loss": 0.4},
+        )
+
+    def train_epoch(self, runner):
+        return {"num_train_batches": 99, "num_train_samples": 100, "loss": 9.9}
+
+    def evaluate_context(self, context):
+        return EvaluationSummary(metrics={"image_auroc": 0.8})
+
+
 def test_base_protocol_run_reuses_one_context_and_serializes_typed_results(monkeypatch) -> None:
     protocol = _FakeProtocol()
     context = object()
@@ -56,7 +71,8 @@ def test_base_protocol_train_epoch_and_evaluate_keep_public_contract(monkeypatch
     protocol = _FakeProtocol()
     context = object()
 
-    monkeypatch.setattr(protocol, "build_context", lambda runner: context)
+    monkeypatch.setattr(protocol, "build_train_context", lambda runner: context)
+    monkeypatch.setattr(protocol, "build_evaluate_context", lambda runner: context)
 
     assert protocol.train_epoch(SimpleNamespace()) == {
         "num_train_batches": 1,
@@ -78,3 +94,58 @@ def test_base_protocol_legacy_runner_overrides_remain_instantiable_and_used_by_r
     }
     assert protocol.train_runners == [runner]
     assert protocol.eval_runners == [runner]
+
+
+def test_base_protocol_typed_train_epoch_supports_train_only_runner() -> None:
+    protocol = _FakeProtocol()
+    train_loader = object()
+    runner = SimpleNamespace(
+        datamodule=SimpleNamespace(
+            train_dataloader=lambda: train_loader,
+        ),
+        representation=object(),
+        normality=object(),
+    )
+
+    assert protocol.train_epoch(runner) == {
+        "num_train_batches": 1,
+        "num_train_samples": 2,
+        "loss": 0.5,
+    }
+
+
+def test_base_protocol_typed_evaluate_supports_test_only_runner() -> None:
+    protocol = _FakeProtocol()
+    test_loader = object()
+    runner = SimpleNamespace(
+        datamodule=SimpleNamespace(
+            test_dataloader=lambda: test_loader,
+        ),
+        representation=object(),
+        normality=object(),
+        evidence=object(),
+        evaluator=object(),
+    )
+
+    assert protocol.evaluate(runner) == {"image_auroc": 0.9}
+
+
+def test_base_protocol_run_rejects_mixed_mode_protocol() -> None:
+    protocol = _MixedProtocol()
+    runner = SimpleNamespace(
+        datamodule=SimpleNamespace(
+            train_dataloader=lambda: object(),
+            test_dataloader=lambda: object(),
+        ),
+        representation=object(),
+        normality=object(),
+        evidence=object(),
+        evaluator=object(),
+    )
+
+    try:
+        protocol.run(runner)
+    except RuntimeError as exc:
+        assert "mixed" in str(exc).lower()
+    else:
+        raise AssertionError("mixed protocol should raise RuntimeError")
