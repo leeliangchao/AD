@@ -16,7 +16,7 @@ from adrf.core.artifacts import NormalityArtifacts
 from adrf.core.sample import Sample
 from adrf.diffusion.adapters import DiffusersNoisePredictorAdapter
 from adrf.normality.base import BaseNormalityModel
-from adrf.normality.state import NormalityRuntimeState
+from adrf.normality.state import NormalityRuntimeState, install_normality_runtime_state
 from adrf.representation.contracts import RepresentationOutput
 from adrf.utils.distributed import DistributedRuntimeContext
 
@@ -234,18 +234,16 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
         self.diffusers_adapter: DiffusersNoisePredictorAdapter | None = None
         self.input_channels = input_channels
         self.last_fit_loss: float | None = None
-        self.runtime = NormalityRuntimeState(
+        install_normality_runtime_state(
+            self,
+            NormalityRuntimeState(
             device=torch.device("cpu"),
             amp_enabled=False,
             grad_scaler=torch.amp.GradScaler("cuda", enabled=False),
             distributed_context=DistributedRuntimeContext(),
             distributed_training_enabled=False,
+            ),
         )
-        self.runtime_device = self.runtime.device
-        self.amp_enabled = self.runtime.amp_enabled
-        self.grad_scaler = self.runtime.grad_scaler
-        self.distributed_context = self.runtime.distributed_context
-        self.distributed_training_enabled = self.runtime.distributed_training_enabled
         self._adrf_runtime_wrapped = True
         self.eval()
 

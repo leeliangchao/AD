@@ -28,3 +28,13 @@ def make_default_normality_runtime_state() -> NormalityRuntimeState:
         distributed_context=DistributedRuntimeContext(),
         distributed_training_enabled=False,
     )
+
+
+def install_normality_runtime_state(model: object, runtime_state: NormalityRuntimeState) -> NormalityRuntimeState:
+    setattr(model, "runtime", runtime_state)
+    setattr(model, "runtime_device", runtime_state.device)
+    setattr(model, "amp_enabled", runtime_state.amp_enabled)
+    setattr(model, "grad_scaler", runtime_state.grad_scaler)
+    setattr(model, "distributed_context", runtime_state.distributed_context)
+    setattr(model, "distributed_training_enabled", runtime_state.distributed_training_enabled)
+    return runtime_state

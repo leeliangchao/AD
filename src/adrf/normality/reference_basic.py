@@ -16,7 +16,7 @@ from adrf.core.artifacts import NormalityArtifacts
 from adrf.core.sample import Sample
 from adrf.normality.diffusion_basic import _ResidualConvBlock, _normalize_channel_mults
 from adrf.normality.base import BaseNormalityModel
-from adrf.normality.state import make_default_normality_runtime_state
+from adrf.normality.state import install_normality_runtime_state, make_default_normality_runtime_state
 from adrf.representation.contracts import RepresentationOutput
 
 
@@ -106,12 +106,7 @@ class ReferenceBasicNormality(nn.Module, BaseNormalityModel):
             num_res_blocks=self.num_res_blocks,
         )
         self.last_fit_loss: float | None = None
-        self.runtime = make_default_normality_runtime_state()
-        self.runtime_device = self.runtime.device
-        self.amp_enabled = self.runtime.amp_enabled
-        self.grad_scaler = self.runtime.grad_scaler
-        self.distributed_context = self.runtime.distributed_context
-        self.distributed_training_enabled = self.runtime.distributed_training_enabled
+        install_normality_runtime_state(self, make_default_normality_runtime_state())
         self.eval()
 
     def fit(

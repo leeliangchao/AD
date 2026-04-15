@@ -14,7 +14,7 @@ from torch.nn.parallel import DistributedDataParallel
 
 from adrf.core.sample import Sample
 from adrf.normality.runtime import resolve_normality_runtime_spec
-from adrf.normality.state import NormalityRuntimeState
+from adrf.normality.state import NormalityRuntimeState, install_normality_runtime_state
 from adrf.utils.config import load_yaml_config
 from adrf.utils.distributed import DistributedRuntimeContext
 
@@ -200,11 +200,7 @@ def configure_trainable_runtime(
         distributed_context=context,
         distributed_training_enabled=distributed_training_enabled,
     )
-    setattr(model, "runtime", runtime_state)
-    setattr(model, "amp_enabled", runtime_state.amp_enabled)
-    setattr(model, "grad_scaler", runtime_state.grad_scaler)
-    setattr(model, "distributed_context", runtime_state.distributed_context)
-    setattr(model, "distributed_training_enabled", distributed_training_enabled)
+    install_normality_runtime_state(model, runtime_state)
     if effective_amp or device.type != "cpu" or distributed_training_enabled:
         _wrap_fit_for_runtime(model)
 
