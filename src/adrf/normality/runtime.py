@@ -2,12 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from adrf.normality.autoencoder import AutoEncoderNormality
-from adrf.normality.diffusion_basic import DiffusionBasicNormality
-from adrf.normality.reference_basic import ReferenceBasicNormality
-from adrf.normality.reference_diffusion_basic import ReferenceDiffusionBasicNormality
-
-
 @dataclass(frozen=True, slots=True)
 class NormalityRuntimeSpec:
     fit_wrapper_id: str
@@ -15,6 +9,11 @@ class NormalityRuntimeSpec:
 
 
 def resolve_normality_runtime_spec(model: object) -> NormalityRuntimeSpec | None:
+    from adrf.normality.autoencoder import AutoEncoderNormality
+    from adrf.normality.diffusion_basic import DiffusionBasicNormality
+    from adrf.normality.reference_basic import ReferenceBasicNormality
+    from adrf.normality.reference_diffusion_basic import ReferenceDiffusionBasicNormality
+
     if isinstance(model, AutoEncoderNormality):
         return NormalityRuntimeSpec(
             fit_wrapper_id="autoencoder",

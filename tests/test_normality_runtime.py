@@ -45,6 +45,15 @@ def test_resolve_normality_runtime_spec_rejects_duck_typed_impostor() -> None:
     assert resolve_normality_runtime_spec(_Impostor()) is None
 
 
+def test_diffusion_basic_initializes_explicit_runtime_state_with_legacy_aliases() -> None:
+    model = DiffusionBasicNormality()
+
+    assert isinstance(model.runtime, NormalityRuntimeState)
+    assert model.runtime.device == model.runtime_device
+    assert model.runtime.amp_enabled == model.amp_enabled
+    assert model.runtime.grad_scaler is model.grad_scaler
+
+
 def test_configure_trainable_runtime_does_not_patch_duck_typed_impostor() -> None:
     impostor = _Impostor()
     original_fit = impostor.fit
