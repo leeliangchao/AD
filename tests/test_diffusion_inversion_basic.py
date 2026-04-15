@@ -49,20 +49,29 @@ def test_diffusion_inversion_fit_and_infer_accept_representation_output() -> Non
     sample = Sample(image=representations[0].tensor, sample_id="query")
     artifacts = model.infer(sample, representations[0])
 
+    assert artifacts.has("reconstruction")
     assert artifacts.has("trajectory")
     assert artifacts.has("step_costs")
+    assert artifacts.has("step_updates")
     assert "anomaly_map" not in artifacts.primary
     assert "image_score" not in artifacts.primary
 
+    reconstruction = artifacts.get_primary("reconstruction")
     trajectory = artifacts.get_aux("trajectory")
     step_costs = artifacts.get_aux("step_costs")
+    step_updates = artifacts.get_aux("step_updates")
+    assert isinstance(reconstruction, torch.Tensor)
     assert isinstance(trajectory, list)
     assert isinstance(step_costs, list)
-    assert len(trajectory) == len(step_costs) == 4
+    assert isinstance(step_updates, list)
+    assert len(trajectory) == len(step_costs) == len(step_updates) == 4
+    assert reconstruction.shape == (3, 16, 16)
     assert all(isinstance(state, torch.Tensor) for state in trajectory)
     assert all(isinstance(cost_map, torch.Tensor) for cost_map in step_costs)
+    assert all(isinstance(update, torch.Tensor) for update in step_updates)
     assert trajectory[0].shape == trajectory[-1].shape == (3, 16, 16)
     assert step_costs[0].shape == step_costs[-1].shape == (16, 16)
+    assert step_updates[0].shape == step_updates[-1].shape == (3, 16, 16)
     assert artifacts.get_diag("time_embed_dim") == 32
     assert artifacts.get_diag("num_train_timesteps") == 32
     assert artifacts.representation == representations[0].to_artifact_dict()
@@ -95,10 +104,44 @@ def test_diffusion_inversion_infer_is_deterministic_for_the_same_sample() -> Non
     first = model.infer(sample, representations[0])
     second = model.infer(sample, representations[0])
 
+    assert torch.allclose(first.get_primary("reconstruction"), second.get_primary("reconstruction"))
     first_trajectory = torch.stack(first.get_aux("trajectory"))
     second_trajectory = torch.stack(second.get_aux("trajectory"))
     first_step_costs = torch.stack(first.get_aux("step_costs"))
     second_step_costs = torch.stack(second.get_aux("step_costs"))
+    first_step_updates = torch.stack(first.get_aux("step_updates"))
+    second_step_updates = torch.stack(second.get_aux("step_updates"))
 
     assert torch.allclose(first_trajectory, second_trajectory)
     assert torch.allclose(first_step_costs, second_step_costs)
+    assert torch.allclose(first_step_updates, second_step_updates)
+
+
+def test_diffusion_inversion_artifacts_flow_into_reconstruction_residual_evidence() -> None:
+    generator = torch.Generator().manual_seed(0)
+    representations = [
+        make_pixel_output(torch.rand(3, 16, 16, generator=generator), sample_id="train-000")
+    ]
+    model = DiffusionInversionBasicNormality(
+        input_channels=3,
+        hidden_channels=8,
+        time_embed_dim=32,
+        num_train_timesteps=32,
+        learning_rate=1e-3,
+        epochs=1,
+        batch_size=1,
+        noise_level=0.2,
+        num_steps=4,
+        step_size=0.1,
+    )
+    model.fit(representations)
+    sample = Sample(image=representations[0].tensor, sample_id="query")
+
+    artifacts = model.infer(sample, representations[0])
+
+    from adrf.evidence.reconstruction_residual import ReconstructionResidualEvidence
+
+    prediction = ReconstructionResidualEvidence(aggregator="mean").predict(sample, artifacts)
+
+    assert prediction["anomaly_map"].shape == (16, 16)
+    assert isinstance(prediction["image_score"], float)

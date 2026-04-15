@@ -65,3 +65,17 @@ def test_direction_mismatch_evidence_distinguishes_monotonic_and_reversing_traje
 
     assert not torch.allclose(monotonic_prediction["anomaly_map"], reversing_prediction["anomaly_map"])
     assert monotonic_prediction["image_score"] != pytest.approx(reversing_prediction["image_score"])
+
+
+def test_direction_mismatch_evidence_accepts_canonical_step_updates() -> None:
+    step_updates = [
+        torch.tensor([[[1.0, 0.0], [0.0, 1.0]]], dtype=torch.float32),
+        torch.tensor([[[-1.0, 0.0], [0.0, -1.0]]], dtype=torch.float32),
+    ]
+    prediction = DirectionMismatchEvidence(aggregator="mean", direction_reduce="sum").predict(
+        Sample(image=torch.zeros(1, 2, 2)),
+        NormalityArtifacts(auxiliary={"step_updates": step_updates}, capabilities={"step_updates"}),
+    )
+
+    assert prediction["anomaly_map"].shape == (2, 2)
+    assert isinstance(prediction["image_score"], float)

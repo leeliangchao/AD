@@ -9,7 +9,7 @@ import torch
 from adrf.core.artifacts import NormalityArtifacts
 from adrf.core.sample import Sample
 from adrf.normality.diffusion_basic import DiffusionBasicNormality
-from adrf.normality.diffusion_core import deterministic_noise_like
+from adrf.normality.diffusion_core import deterministic_noise_like, run_legacy_reverse_rollout
 from adrf.representation.contracts import RepresentationOutput
 
 
@@ -81,35 +81,31 @@ class DiffusionInversionBasicNormality(DiffusionBasicNormality):
 
         inference_identity = sample.sample_id or representation.sample_id or "inference"
         current_state = self._initial_state(representation, identity=inference_identity)
-        trajectory: list[torch.Tensor] = []
-        step_costs: list[torch.Tensor] = []
 
         with torch.no_grad():
             rollout_timesteps = self._rollout_timesteps(current_state.device)
             rollout_scales = self._noise_scale_from_timesteps(rollout_timesteps)
-            for step_index, timestep in enumerate(rollout_timesteps):
-                timestep_batch = timestep.expand(current_state.shape[0])
-                if self.backend == "diffusers":
-                    self._ensure_diffusers_backend(sample_size=int(current_state.shape[-1]))
-                    predicted_noise = self.diffusers_adapter.model(current_state, timestep_batch)
-                else:
-                    current_noise_scale = rollout_scales[step_index].expand(current_state.shape[0])
-                    predicted_noise = self.denoiser(current_state, timestep_batch, current_noise_scale)
-                trajectory.append(current_state.squeeze(0).detach().clone())
-                if step_index < self.num_steps - 1:
-                    rollout_scale = rollout_scales[step_index].view(-1, 1, 1, 1)
-                    next_scale = rollout_scales[step_index + 1].view(-1, 1, 1, 1)
-                    predicted_clean = current_state - rollout_scale * predicted_noise
-                    scale_delta = (rollout_scale - next_scale).clamp_min(0.0)
-                    next_state = current_state - self.step_size * self.rollout_gain * scale_delta * predicted_noise
-                    if self.denoised_blend > 0:
-                        next_state = (1.0 - self.denoised_blend) * next_state + self.denoised_blend * predicted_clean
-                    step_costs.append((next_state - current_state).abs().mean(dim=1).squeeze(0).detach().clone())
-                    current_state = next_state
-                else:
-                    step_costs.append(torch.zeros_like(current_state.mean(dim=1).squeeze(0)))
+            if self.backend == "diffusers":
+                self._ensure_diffusers_backend(sample_size=int(current_state.shape[-1]))
 
-        final_state = trajectory[-1]
+                def predict_noise_fn(state: torch.Tensor, timestep_batch: torch.Tensor, _noise_scale: torch.Tensor) -> torch.Tensor:
+                    return self.diffusers_adapter.model(state, timestep_batch)
+            else:
+
+                def predict_noise_fn(state: torch.Tensor, timestep_batch: torch.Tensor, noise_scale: torch.Tensor) -> torch.Tensor:
+                    return self.denoiser(state, timestep_batch, noise_scale)
+
+            reconstruction, trajectory, step_updates, step_costs = run_legacy_reverse_rollout(
+                current_state,
+                rollout_timesteps,
+                rollout_scales,
+                predict_noise_fn=predict_noise_fn,
+                step_size=self.step_size,
+                rollout_gain=self.rollout_gain,
+                denoised_blend=self.denoised_blend,
+            )
+
+        final_state = reconstruction.squeeze(0)
         return NormalityArtifacts(
             context={
                 "sample_id": sample.sample_id,
@@ -117,9 +113,12 @@ class DiffusionInversionBasicNormality(DiffusionBasicNormality):
                 "mode": "inference",
             },
             representation=self.serialize_representation(representation),
-            primary={},
+            primary={
+                "reconstruction": final_state,
+            },
             auxiliary={
                 "trajectory": trajectory,
+                "step_updates": step_updates,
                 "step_costs": step_costs,
             },
             diagnostics={
@@ -137,7 +136,7 @@ class DiffusionInversionBasicNormality(DiffusionBasicNormality):
                     "last_step_cost_mean": float(step_costs[-1].mean().item()),
                 },
             },
-            capabilities={"trajectory", "step_costs"},
+            capabilities={"reconstruction", "trajectory", "step_updates", "step_costs"},
         )
 
     def _initial_state(self, representation: RepresentationOutput, *, identity: object | None = None) -> torch.Tensor:

@@ -14,18 +14,23 @@ from adrf.evidence.base import BaseEvidenceModel
 class PathCostEvidence(BaseEvidenceModel):
     """Accumulate step-aligned cost maps into anomaly evidence."""
 
-    required_capabilities = {"step_costs"}
+    required_capabilities = set()
 
     def predict(self, sample: Sample, artifacts: NormalityArtifacts) -> dict[str, Any]:
         """Build anomaly evidence from a sequence of step cost maps."""
 
         del sample
-        self.ensure_required_capabilities(artifacts)
-        raw_step_costs = artifacts.get_aux("step_costs")
-        if not isinstance(raw_step_costs, list) or not raw_step_costs:
-            raise TypeError("PathCostEvidence expects artifacts['step_costs'] to be a non-empty list.")
-
-        step_cost_maps = [self._normalize_step_cost(cost_map) for cost_map in raw_step_costs]
+        raw_step_updates = artifacts.get_aux("step_updates")
+        if isinstance(raw_step_updates, list) and raw_step_updates:
+            step_cost_maps = [self._normalize_step_cost(update) for update in raw_step_updates]
+        else:
+            if not artifacts.has("step_costs"):
+                raise KeyError("Missing required capabilities: step_costs")
+            self.ensure_required_capabilities(artifacts)
+            raw_step_costs = artifacts.get_aux("step_costs")
+            if not isinstance(raw_step_costs, list) or not raw_step_costs:
+                raise TypeError("PathCostEvidence expects artifacts['step_costs'] to be a non-empty list.")
+            step_cost_maps = [self._normalize_step_cost(cost_map) for cost_map in raw_step_costs]
         anomaly_map = torch.stack(step_cost_maps, dim=0).sum(dim=0)
         return self.build_prediction(
             anomaly_map,

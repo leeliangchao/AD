@@ -14,7 +14,7 @@ from adrf.evidence.base import BaseEvidenceModel
 class DirectionMismatchEvidence(BaseEvidenceModel):
     """Convert trajectory step differences into anomaly evidence."""
 
-    required_capabilities = {"trajectory"}
+    required_capabilities = set()
 
     def __init__(self, aggregator: str = "max", direction_reduce: str = "sum") -> None:
         super().__init__(aggregator=aggregator)
@@ -26,20 +26,7 @@ class DirectionMismatchEvidence(BaseEvidenceModel):
         """Build anomaly evidence from trajectory-only process artifacts."""
 
         del sample
-        self.ensure_required_capabilities(artifacts)
-        trajectory = artifacts.get_aux("trajectory")
-        if not isinstance(trajectory, list) or not trajectory:
-            raise TypeError("DirectionMismatchEvidence expects artifacts['trajectory'] to be a non-empty list.")
-        if len(trajectory) < 2:
-            raise ValueError("DirectionMismatchEvidence requires at least two trajectory states.")
-
-        transitions = []
-        for previous_state, current_state in zip(trajectory[:-1], trajectory[1:], strict=True):
-            if not isinstance(previous_state, torch.Tensor) or not isinstance(current_state, torch.Tensor):
-                raise TypeError("Each trajectory state must be a torch.Tensor.")
-            if previous_state.shape != current_state.shape:
-                raise ValueError("All trajectory states must share the same shape.")
-            transitions.append(current_state.float() - previous_state.float())
+        transitions = self._resolve_transitions(artifacts)
 
         mismatch_maps = []
         for previous_delta, current_delta in zip(transitions[:-1], transitions[1:], strict=True):
@@ -58,7 +45,7 @@ class DirectionMismatchEvidence(BaseEvidenceModel):
 
         return self.build_prediction(
             anomaly_map,
-            aux_scores={"num_steps": len(trajectory)},
+            aux_scores={"num_steps": len(transitions) + 1},
         )
 
     @staticmethod
@@ -70,3 +57,35 @@ class DirectionMismatchEvidence(BaseEvidenceModel):
         if tensor.ndim == 2:
             return tensor
         raise ValueError("Trajectory states must be 2D or 3D tensors.")
+
+    def _resolve_transitions(self, artifacts: NormalityArtifacts) -> list[torch.Tensor]:
+        """Resolve canonical step updates first, then fall back to trajectory differences."""
+
+        raw_step_updates = artifacts.get_aux("step_updates")
+        if isinstance(raw_step_updates, list) and raw_step_updates:
+            updates = []
+            for update in raw_step_updates:
+                if not isinstance(update, torch.Tensor):
+                    raise TypeError("Each step update must be a torch.Tensor.")
+                updates.append(update.float())
+            if len(updates) < 2:
+                raise ValueError("DirectionMismatchEvidence requires at least two step updates.")
+            return updates
+
+        if not artifacts.has("trajectory"):
+            raise KeyError("Missing required capabilities: trajectory")
+        self.ensure_required_capabilities(artifacts)
+        trajectory = artifacts.get_aux("trajectory")
+        if not isinstance(trajectory, list) or not trajectory:
+            raise TypeError("DirectionMismatchEvidence expects artifacts['trajectory'] to be a non-empty list.")
+        if len(trajectory) < 2:
+            raise ValueError("DirectionMismatchEvidence requires at least two trajectory states.")
+
+        transitions = []
+        for previous_state, current_state in zip(trajectory[:-1], trajectory[1:], strict=True):
+            if not isinstance(previous_state, torch.Tensor) or not isinstance(current_state, torch.Tensor):
+                raise TypeError("Each trajectory state must be a torch.Tensor.")
+            if previous_state.shape != current_state.shape:
+                raise ValueError("All trajectory states must share the same shape.")
+            transitions.append(current_state.float() - previous_state.float())
+        return transitions

@@ -37,12 +37,16 @@ def test_diffusion_inversion_artifacts_preserve_step_aligned_contract() -> None:
     sample = Sample(image=train_representations[0].tensor, sample_id="query")
     artifacts = model.infer(sample, train_representations[0])
 
+    reconstruction = artifacts.get_primary("reconstruction")
     trajectory = artifacts.get_aux("trajectory")
     step_costs = artifacts.get_aux("step_costs")
+    step_updates = artifacts.get_aux("step_updates")
 
-    assert len(trajectory) == len(step_costs) == 4
+    assert reconstruction.shape == (3, 16, 16)
+    assert len(trajectory) == len(step_costs) == len(step_updates) == 4
     assert trajectory[0].shape == trajectory[-1].shape == (3, 16, 16)
     assert step_costs[0].shape == step_costs[-1].shape == (16, 16)
+    assert step_updates[0].shape == step_updates[-1].shape == (3, 16, 16)
     assert artifacts.representation == train_representations[0].to_artifact_dict()
 
 
