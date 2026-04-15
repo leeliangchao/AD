@@ -8,6 +8,7 @@ from torchvision.models import ResNet18_Weights, resnet18
 
 from adrf.representation.base import BaseRepresentation
 from adrf.representation.contracts import RepresentationProvenance
+from adrf.representation import provenance as representation_provenance
 
 _UNSET = object()
 
@@ -64,7 +65,7 @@ class FeatureRepresentation(BaseRepresentation):
             input_normalize=self.input_normalize,
             normalize_mean=None,
             normalize_std=None,
-            code_version="working-tree",
+            code_version=representation_provenance.resolve_representation_code_version(),
             config_fingerprint=f"feature:{self.weights}:{self.trainable}:{self.input_image_size}:{self.input_normalize}",
         )
 

@@ -46,6 +46,43 @@ def test_export_experiment_report_gracefully_handles_missing_metrics_file(tmp_pa
     assert "failed" in report_text
 
 
+def test_export_experiment_report_gracefully_handles_missing_config_snapshot(tmp_path: Path) -> None:
+    run_dir = tmp_path / "runs" / "demo_no_config"
+    run_dir.mkdir(parents=True)
+    (run_dir / "run_info.json").write_text(
+        json.dumps({"run_name": "demo_no_config", "status": "failed"}),
+        encoding="utf-8",
+    )
+
+    report_path = export_experiment_report(run_dir)
+
+    assert report_path.exists()
+    report_text = report_path.read_text(encoding="utf-8")
+    assert "demo_no_config" in report_text
+    assert "## Config" in report_text
+
+
+def test_export_experiment_report_gracefully_handles_malformed_metrics_file(tmp_path: Path) -> None:
+    run_dir = tmp_path / "runs" / "demo_bad_metrics"
+    run_dir.mkdir(parents=True)
+    (run_dir / "run_info.json").write_text(
+        json.dumps({"run_name": "demo_bad_metrics", "status": "failed"}),
+        encoding="utf-8",
+    )
+    (run_dir / "config_snapshot.yaml").write_text(
+        "normality:\n  name: autoencoder\n",
+        encoding="utf-8",
+    )
+    (run_dir / "metrics.json").write_text("{not-json", encoding="utf-8")
+
+    report_path = export_experiment_report(run_dir)
+
+    assert report_path.exists()
+    report_text = report_path.read_text(encoding="utf-8")
+    assert "demo_bad_metrics" in report_text
+    assert "failed" in report_text
+
+
 def test_write_benchmark_summary_creates_markdown_and_csv(tmp_path: Path) -> None:
     """Benchmark summary export should create markdown, CSV, and JSON assets."""
 

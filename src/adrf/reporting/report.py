@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from adrf.utils.config import load_yaml_config
 
 
@@ -15,7 +17,7 @@ def export_experiment_report(run_dir: str | Path) -> Path:
     run_path = Path(run_dir).resolve()
     run_info = _load_json(run_path / "run_info.json")
     metrics_payload = _load_json(run_path / "metrics.json")
-    config_snapshot = load_yaml_config(run_path / "config_snapshot.yaml")
+    config_snapshot = _load_yaml_mapping(run_path / "config_snapshot.yaml")
 
     lines = [
         f"# {run_info.get('run_name', run_path.name)}",
@@ -82,7 +84,23 @@ def _load_json(path: Path) -> dict[str, Any]:
 
     if not path.exists():
         return {}
-    return json.loads(path.read_text(encoding="utf-8"))
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _load_yaml_mapping(path: Path) -> dict[str, Any]:
+    """Load a YAML mapping when available, otherwise fall back to an empty mapping."""
+
+    if not path.exists():
+        return {}
+    try:
+        payload = load_yaml_config(path)
+    except (TypeError, yaml.YAMLError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 def _yaml_dump(payload: dict[str, Any]) -> str:

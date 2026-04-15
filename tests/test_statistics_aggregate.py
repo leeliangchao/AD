@@ -57,3 +57,32 @@ def test_aggregate_grouped_seed_results_groups_by_combo_name() -> None:
     assert aggregated[0]["aggregated_metrics"]["image_auroc"]["mean"] == pytest.approx(0.85)
     assert aggregated[0]["seed_count"] == 2
 
+
+def test_aggregate_grouped_seed_results_marks_partial_failures_explicitly() -> None:
+    aggregated = aggregate_grouped_seed_results(
+        [
+            {
+                "group_name": "combo_a",
+                "experiment_name": "combo_a__seed0",
+                "dataset": "mvtec_bottle",
+                "representation": "pixel",
+                "normality": "diffusion_basic",
+                "evidence": "noise_residual",
+                "status": "completed",
+                "seed": 0,
+                "metrics": {"image_auroc": 0.9},
+            },
+            {
+                "group_name": "combo_a",
+                "experiment_name": "combo_a__seed1",
+                "dataset": "mvtec_bottle",
+                "representation": "pixel",
+                "normality": "diffusion_basic",
+                "evidence": "noise_residual",
+                "status": "failed",
+                "seed": 1,
+            },
+        ]
+    )
+
+    assert aggregated[0]["status"] == "partial_failed"

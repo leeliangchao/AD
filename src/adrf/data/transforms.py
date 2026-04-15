@@ -51,6 +51,7 @@ class SampleTransform:
             )
             tensor = tv_functional.to_tensor(resized)
         elif isinstance(image, torch.Tensor):
+            was_uint8 = image.dtype == torch.uint8
             tensor = image.float()
             if tensor.ndim == 3:
                 tensor = tv_functional.resize(
@@ -61,6 +62,8 @@ class SampleTransform:
                 )
             else:
                 raise TypeError("Sample image tensor must have shape [C, H, W].")
+            if was_uint8 or tensor.max() > 1:
+                tensor = tensor / 255.0
         else:
             raise TypeError("Sample image must be a PIL image or torch tensor.")
 

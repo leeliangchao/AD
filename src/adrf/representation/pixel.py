@@ -6,6 +6,7 @@ import torch
 
 from adrf.representation.base import BaseRepresentation
 from adrf.representation.contracts import RepresentationProvenance
+from adrf.representation import provenance as representation_provenance
 
 
 class PixelRepresentation(BaseRepresentation):
@@ -33,6 +34,6 @@ class PixelRepresentation(BaseRepresentation):
             input_normalize=self.input_normalize,
             normalize_mean=None,
             normalize_std=None,
-            code_version="working-tree",
-            config_fingerprint="pixel",
+            code_version=representation_provenance.resolve_representation_code_version(),
+            config_fingerprint=f"pixel:{self.input_image_size}:{self.input_normalize}",
         )

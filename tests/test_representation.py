@@ -12,6 +12,7 @@ from adrf.representation.base import BaseRepresentation
 from adrf.representation.contracts import RepresentationBatch, RepresentationProvenance
 from adrf.representation.feature import FeatureRepresentation
 from adrf.representation.pixel import PixelRepresentation
+from adrf.representation.provenance import resolve_representation_code_version
 
 
 class _BuggyRepresentation(BaseRepresentation):
@@ -80,6 +81,34 @@ def test_feature_representation_encode_sample_reports_feature_metadata() -> None
     assert output.tensor.ndim == 3
     assert output.feature_dim == output.tensor.shape[0]
     assert output.provenance.backbone_name == "resnet18"
+
+
+def test_builtin_representations_record_resolved_code_version(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "adrf.representation.provenance.resolve_representation_code_version",
+        lambda: "commit-sha-123",
+    )
+
+    pixel_provenance = PixelRepresentation(input_image_size=(16, 20), input_normalize=False).describe()
+    feature_provenance = FeatureRepresentation(weights=None, trainable=False, input_image_size=(64, 64), input_normalize=False).describe()
+
+    assert pixel_provenance.code_version == "commit-sha-123"
+    assert feature_provenance.code_version == "commit-sha-123"
+
+
+def test_resolve_representation_code_version_prefers_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    resolve_representation_code_version.cache_clear()
+    monkeypatch.setenv("ADRF_CODE_VERSION", "env-sha-456")
+
+    assert resolve_representation_code_version() == "env-sha-456"
+    resolve_representation_code_version.cache_clear()
+
+
+def test_pixel_representation_fingerprint_tracks_configuration() -> None:
+    default = PixelRepresentation(input_image_size=(16, 20), input_normalize=False).describe()
+    normalized = PixelRepresentation(input_image_size=(32, 24), input_normalize=True).describe()
+
+    assert default.config_fingerprint != normalized.config_fingerprint
 
 
 def test_feature_representation_legacy_constructor_kwargs_map_to_new_contract() -> None:
