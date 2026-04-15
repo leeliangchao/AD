@@ -47,6 +47,13 @@ def test_registry_get_raises_for_unknown_entry() -> None:
         registry.get("representation", "missing")
 
 
+def test_registry_rejects_unknown_group_registration() -> None:
+    registry = Registry()
+
+    with pytest.raises(KeyError, match="unknown group"):
+        registry.register("evidnce", "dummy", DummyComponent)
+
+
 def test_load_yaml_config_and_instantiate_component(tmp_path: Path) -> None:
     """YAML configs should be loaded into dicts and instantiated via the registry."""
 
@@ -74,3 +81,14 @@ def test_load_yaml_config_and_instantiate_component(tmp_path: Path) -> None:
     assert isinstance(component, DummyComponent)
     assert component.value == 7
     assert component.enabled is True
+
+
+def test_instantiate_component_rejects_unknown_group() -> None:
+    registry = Registry()
+
+    with pytest.raises(KeyError, match="unknown group"):
+        instantiate_component(
+            {"name": "dummy", "params": {"value": 1}},
+            registry=registry,
+            group="evidnce",
+        )
