@@ -14,18 +14,21 @@ from adrf.data.transforms import build_sample_transform
 
 def project_root() -> Path:
     """Return the repository root that contains this example."""
+    """ 返回包含此示例的存储库根目录。"""
 
     return Path(__file__).resolve().parents[1]
 
 
 def default_data_root() -> Path:
     """Return the repository-local MVTec root used by the example."""
+    """返回示例使用的存储库本地 MVTec 根目录。"""
 
     return project_root() / "data" / "mvtec"
 
 
 def available_categories(root: Path) -> list[str]:
     """Return available MVTec categories under the provided root."""
+    """返回提供的根目录下可用的 MVTec 类别。"""
 
     if not root.exists():
         return []
@@ -34,6 +37,7 @@ def available_categories(root: Path) -> list[str]:
 
 def _sample_snapshot(sample: Sample) -> dict[str, Any]:
     """Build a compact summary of one Sample payload."""
+    """ 构建一个 Sample 负载的紧凑摘要。"""
 
     image_shape = list(sample.image.shape) if hasattr(sample.image, "shape") else None
     reference_shape = list(sample.reference.shape) if hasattr(sample.reference, "shape") else None
@@ -56,9 +60,11 @@ def _sample_snapshot(sample: Sample) -> dict[str, Any]:
 
 class TraceSplitTransform:
     """Wrap the default transform and record which split it observed before execution."""
+    """ 包装默认变换并记录它在执行前观察到的拆分。"""
 
     def __init__(self) -> None:
         self.base_transform = build_sample_transform(image_size=(32, 32), normalize=False)
+        #   记录每个拆分被观察到的次数，以验证数据加载器是否正确应用了变换。
         self.seen_splits: dict[str, list[str]] = {}
 
     def __call__(self, sample: Sample) -> Sample:
