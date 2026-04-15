@@ -120,6 +120,23 @@ def test_official_matrix_expands_fixed_contract() -> None:
         assert spec["overrides"]["normality"]["backend"] == "legacy"
 
 
+def test_official_matrix_uses_filled_capacity_defaults_in_compact_schema() -> None:
+    matrix = AblationMatrix.from_yaml(OFFICIAL_MATRIX_PATH)
+    specs = matrix.expand()
+
+    by_normality = {spec["normality"]: spec["config"]["normality"]["params"] for spec in specs}
+
+    assert {"base_channels", "channel_mults", "num_blocks_per_stage"} <= set(by_normality["autoencoder"])
+    assert by_normality["autoencoder"]["base_channels"] == 8
+    assert {"base_channels", "channel_mults", "num_res_blocks", "time_embed_dim", "num_train_timesteps"} <= set(
+        by_normality["diffusion_basic"]
+    )
+    assert by_normality["diffusion_basic"]["base_channels"] == 16
+    assert by_normality["diffusion_inversion_basic"]["num_steps"] == 6
+    assert by_normality["reference_basic"]["condition_channels"] == 8
+    assert by_normality["reference_diffusion_basic"]["condition_channels"] == 12
+
+
 def test_official_contract_metrics_are_emitted_by_matrix_runs(tmp_path: Path) -> None:
     """A reduced official-contract matrix should emit the fixed comparison metrics."""
 
@@ -163,4 +180,3 @@ def test_official_contract_metrics_are_emitted_by_matrix_runs(tmp_path: Path) ->
     record = results["experiments"][0]
     assert record["status"] == "completed"
     assert {"image_auroc", "pixel_auroc", "pixel_aupr", "train_time", "total_time"} <= set(record["metrics"])
-

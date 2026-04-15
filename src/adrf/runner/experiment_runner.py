@@ -432,6 +432,10 @@ class ExperimentRunner:
         random.seed(self.seed)
         np.random.seed(self.seed)
         torch.manual_seed(self.seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(self.seed)
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
 
     def _log_metrics(self, metrics: dict[str, Any], step: int | None = None) -> None:
         """Fan out metric logging to all configured loggers."""
