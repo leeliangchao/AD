@@ -380,6 +380,7 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
             learning_rate=self.learning_rate,
             noise_level=self.noise_level,
             sample_size=sample_size,
+            num_train_timesteps=self.num_train_timesteps,
         )
         self.diffusers_adapter.to(self.runtime.device)
         install_normality_runtime_state(self.diffusers_adapter, self.runtime)

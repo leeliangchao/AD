@@ -107,3 +107,41 @@ def test_checkpoint_io_loads_state_dicts_saved_from_ddp_wrapped_submodules(tmp_p
     first_saved = next(model.parameters()).detach()
     first_restored = next(restored.parameters()).detach()
     assert torch.allclose(first_saved, first_restored)
+
+
+def test_checkpoint_io_loads_state_dicts_saved_from_top_level_module_wrapper(tmp_path: Path) -> None:
+    """Checkpoint loading should strip a top-level `module.` wrapper prefix."""
+
+    model = nn.Linear(2, 2)
+    checkpoint_path = tmp_path / "linear_ddp.pt"
+    wrapped_state = {f"module.{key}": value for key, value in model.state_dict().items()}
+    torch.save(wrapped_state, checkpoint_path)
+
+    restored = nn.Linear(2, 2)
+    loaded = load_model_checkpoint(restored, checkpoint_path)
+
+    assert loaded is True
+    assert torch.allclose(model.weight.detach(), restored.weight.detach())
+    assert torch.allclose(model.bias.detach(), restored.bias.detach())
+
+
+def test_checkpoint_io_preserves_legitimate_nested_module_segment_names(tmp_path: Path) -> None:
+    """Normalization should not rewrite real submodule paths that happen to contain `module`."""
+
+    class _NestedModule(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.encoder = nn.Module()
+            self.encoder.add_module("module", nn.Linear(2, 2))
+
+    model = _NestedModule()
+    checkpoint_path = tmp_path / "nested_module.pt"
+
+    saved = save_model_checkpoint(model, checkpoint_path)
+    restored = _NestedModule()
+    loaded = load_model_checkpoint(restored, checkpoint_path)
+
+    assert saved is True
+    assert loaded is True
+    assert torch.allclose(model.encoder.module.weight.detach(), restored.encoder.module.weight.detach())
+    assert torch.allclose(model.encoder.module.bias.detach(), restored.encoder.module.bias.detach())

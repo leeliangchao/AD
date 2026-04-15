@@ -1,5 +1,6 @@
 """Tests for the normality artifacts exchange layer."""
 
+import json
 from pathlib import Path
 import sys
 
@@ -76,6 +77,17 @@ def test_artifacts_round_trip_serialized_payload() -> None:
     assert restored.auxiliary == {"memory_distance": 0.25}
     assert restored.diagnostics == {"fit_loss": 0.1}
     assert restored.capabilities == {"projection", "memory_distance"}
+
+
+def test_artifacts_to_dict_is_json_serializable() -> None:
+    artifacts = NormalityArtifacts(
+        primary={"projection": [1.0]},
+        capabilities={"projection"},
+    )
+
+    payload = artifacts.to_dict()
+
+    json.dumps(payload)
 
 
 def test_artifacts_validate_rejects_capabilities_missing_from_payloads() -> None:
