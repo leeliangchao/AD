@@ -24,11 +24,12 @@ class DiffusersNoisePredictorAdapter(nn.Module):
         learning_rate: float,
         noise_level: float,
         sample_size: int,
+        num_train_timesteps: int,
     ) -> None:
         super().__init__()
         self.learning_rate = learning_rate
         self.noise_level = noise_level
-        self.scheduler: DiffusersSchedulerAdapter = make_scheduler("ddpm", num_train_timesteps=1000)
+        self.scheduler: DiffusersSchedulerAdapter = make_scheduler("ddpm", num_train_timesteps=num_train_timesteps)
         self.model: DiffusersUNetAdapter = make_unet_model(
             {
                 "sample_size": sample_size,
@@ -49,24 +50,49 @@ class DiffusersNoisePredictorAdapter(nn.Module):
         loss = functional.mse_loss(predicted_noise, target_noise)
         return loss, target_noise
 
-    def forward_infer_step(self, clean_image: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def forward_infer_step(
+        self,
+        clean_image: torch.Tensor,
+        *,
+        target_noise: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Run one forward inference step and return predicted/target noise."""
 
-        noisy_image, target_noise, timesteps = self._sample_noisy_inputs(clean_image)
+        max_timestep = self.scheduler.scheduler.config.num_train_timesteps - 1
+        timesteps = torch.full(
+            (clean_image.shape[0],),
+            fill_value=max_timestep,
+            device=clean_image.device,
+            dtype=torch.long,
+        )
+        noisy_image, target_noise, timesteps = self._sample_noisy_inputs(
+            clean_image,
+            timesteps=timesteps,
+            target_noise=target_noise,
+        )
         predicted_noise = self.model(noisy_image, timesteps)
         return predicted_noise, target_noise
 
-    def _sample_noisy_inputs(self, clean_batch: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def _sample_noisy_inputs(
+        self,
+        clean_batch: torch.Tensor,
+        *,
+        timesteps: torch.Tensor | None = None,
+        target_noise: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Sample Gaussian noise and DDPM timesteps for the input batch."""
 
         batch_size = clean_batch.shape[0]
-        target_noise = torch.randn_like(clean_batch)
-        raw_timesteps = torch.randint(
-            low=0,
-            high=self.scheduler.scheduler.config.num_train_timesteps,
-            size=(batch_size,),
-            device=clean_batch.device,
-            dtype=torch.long,
-        )
+        if target_noise is None:
+            target_noise = torch.randn_like(clean_batch)
+        raw_timesteps = timesteps
+        if raw_timesteps is None:
+            raw_timesteps = torch.randint(
+                low=0,
+                high=self.scheduler.scheduler.config.num_train_timesteps,
+                size=(batch_size,),
+                device=clean_batch.device,
+                dtype=torch.long,
+            )
         noisy_batch = self.scheduler.add_noise(clean_batch, self.noise_level * target_noise, raw_timesteps)
         return noisy_batch, target_noise, raw_timesteps

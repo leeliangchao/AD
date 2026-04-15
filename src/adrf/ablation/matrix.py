@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+import hashlib
 from itertools import product
+import json
 from pathlib import Path
 from typing import Any
 
@@ -161,6 +163,7 @@ class AblationMatrix:
                     "evidence": row["evidence"],
                     "protocol": row.get("protocol", protocol_alias),
                     "evaluator": row.get("evaluator", evaluator_alias),
+                    "identity_overrides": deepcopy(row.get("overrides", {})) if isinstance(row.get("overrides", {}), dict) else {},
                     "overrides": self._merge_nested_mappings(matrix_overrides, row.get("overrides", {})),
                 }
             )
@@ -175,9 +178,10 @@ class AblationMatrix:
         evidence_alias = combo["evidence"]
         protocol_alias = combo["protocol"]
         evaluator_alias = combo["evaluator"]
-        group_name = "__".join(
-            [dataset_alias, representation_alias, normality_alias, evidence_alias]
-        )
+        group_name = "__".join([dataset_alias, representation_alias, normality_alias, evidence_alias])
+        identity_suffix = self._identity_suffix(combo.get("identity_overrides", {}))
+        if identity_suffix:
+            group_name = f"{group_name}__cfg{identity_suffix}"
         seed = combo.get("seed")
         experiment_name = f"{group_name}__seed{seed}" if seed is not None else group_name
 
@@ -330,8 +334,10 @@ class AblationMatrix:
                     "name": "autoencoder",
                     "params": {
                         "input_channels": 3,
-                        "hidden_channels": 4,
-                        "latent_channels": 8,
+                        "base_channels": 8,
+                        "channel_mults": [1, 2],
+                        "latent_channels": 24,
+                        "num_blocks_per_stage": 2,
                         "learning_rate": 0.001,
                         "epochs": 1,
                         "batch_size": 2,
@@ -341,7 +347,11 @@ class AblationMatrix:
                     "name": "diffusion_basic",
                     "params": {
                         "input_channels": 3,
-                        "hidden_channels": 8,
+                        "base_channels": 16,
+                        "channel_mults": [1, 2, 2],
+                        "num_res_blocks": 2,
+                        "time_embed_dim": 64,
+                        "num_train_timesteps": 100,
                         "learning_rate": 0.001,
                         "epochs": 1,
                         "batch_size": 2,
@@ -352,20 +362,28 @@ class AblationMatrix:
                     "name": "diffusion_inversion_basic",
                     "params": {
                         "input_channels": 3,
-                        "hidden_channels": 8,
+                        "base_channels": 16,
+                        "channel_mults": [1, 2, 2],
+                        "num_res_blocks": 2,
+                        "time_embed_dim": 64,
+                        "num_train_timesteps": 100,
                         "learning_rate": 0.001,
                         "epochs": 1,
                         "batch_size": 2,
                         "noise_level": 0.2,
-                        "num_steps": 4,
+                        "num_steps": 6,
                         "step_size": 0.1,
+                        "initial_noise_scale": 0.2,
                     },
                 },
                 "reference_basic": {
                     "name": "reference_basic",
                     "params": {
                         "input_channels": 3,
-                        "hidden_channels": 8,
+                        "base_channels": 12,
+                        "condition_channels": 8,
+                        "channel_mults": [1, 2],
+                        "num_res_blocks": 2,
                         "learning_rate": 0.001,
                         "epochs": 1,
                         "batch_size": 2,
@@ -375,7 +393,12 @@ class AblationMatrix:
                     "name": "reference_diffusion_basic",
                     "params": {
                         "input_channels": 3,
-                        "hidden_channels": 8,
+                        "base_channels": 16,
+                        "condition_channels": 12,
+                        "channel_mults": [1, 2],
+                        "num_res_blocks": 2,
+                        "time_embed_dim": 64,
+                        "num_train_timesteps": 100,
                         "learning_rate": 0.001,
                         "epochs": 1,
                         "batch_size": 2,
@@ -514,3 +537,12 @@ class AblationMatrix:
             else:
                 merged[key] = deepcopy(value)
         return merged
+
+    @staticmethod
+    def _identity_suffix(identity_overrides: Any) -> str:
+        """Return a short stable fingerprint for row-level identity-changing overrides."""
+
+        if not isinstance(identity_overrides, dict) or not identity_overrides:
+            return ""
+        payload = json.dumps(identity_overrides, sort_keys=True, separators=(",", ":"), default=str)
+        return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:8]

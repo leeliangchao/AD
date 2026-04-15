@@ -8,7 +8,7 @@ import torch
 
 from adrf.core.artifacts import NormalityArtifacts
 from adrf.core.sample import Sample
-from adrf.normality.diffusion_basic import DiffusionBasicNormality
+from adrf.normality.diffusion_basic import DiffusionBasicNormality, _deterministic_noise_like
 from adrf.representation.contracts import RepresentationOutput
 
 
@@ -78,7 +78,8 @@ class DiffusionInversionBasicNormality(DiffusionBasicNormality):
     ) -> NormalityArtifacts:
         """Run a fixed denoising trajectory and expose step-aligned process artifacts."""
 
-        current_state = self._initial_state(representation)
+        inference_identity = sample.sample_id or representation.sample_id or "inference"
+        current_state = self._initial_state(representation, identity=inference_identity)
         trajectory: list[torch.Tensor] = []
         step_costs: list[torch.Tensor] = []
 
@@ -135,11 +136,17 @@ class DiffusionInversionBasicNormality(DiffusionBasicNormality):
             capabilities={"trajectory", "step_costs"},
         )
 
-    def _initial_state(self, representation: RepresentationOutput) -> torch.Tensor:
+    def _initial_state(self, representation: RepresentationOutput, *, identity: object | None = None) -> torch.Tensor:
         """Build the initial perturbed state for inversion-style inference."""
 
         clean_image = self.require_representation_tensor(representation).float().unsqueeze(0)
-        perturbation = self.initial_noise_scale * torch.randn_like(clean_image)
+        perturbation = self.initial_noise_scale * _deterministic_noise_like(
+            clean_image,
+            type(self).__name__,
+            identity,
+            self.initial_noise_scale,
+            self.num_steps,
+        )
         return clean_image + perturbation
 
     def _rollout_timesteps(self, device: torch.device) -> torch.Tensor:

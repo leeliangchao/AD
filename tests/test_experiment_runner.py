@@ -288,6 +288,32 @@ def test_experiment_runner_builds_components_and_runs(tmp_path: Path) -> None:
     assert set(results["evaluation"]) == {"image_auroc", "pixel_auroc", "pixel_aupr"}
 
 
+def test_experiment_runner_initialize_seed_configures_cuda_determinism(monkeypatch) -> None:
+    config = {
+        "seed": 123,
+        "datamodule": {"name": "mvtec_single_class", "params": {}},
+        "representation": {"name": "pixel", "params": {}},
+        "normality": {"name": "feature_memory", "params": {}},
+        "evidence": {"name": "feature_distance", "params": {"aggregator": "max"}},
+        "evaluator": {"name": "basic_ad", "params": {}},
+        "protocol": {"name": "one_class", "params": {}},
+    }
+    runner = ExperimentRunner(config)
+    recorded: list[int] = []
+
+    monkeypatch.setattr("adrf.runner.experiment_runner.torch.cuda.is_available", lambda: True)
+    monkeypatch.setattr("adrf.runner.experiment_runner.torch.manual_seed", lambda seed: None)
+    monkeypatch.setattr("adrf.runner.experiment_runner.torch.cuda.manual_seed_all", recorded.append)
+    monkeypatch.setattr(torch.backends.cudnn, "deterministic", False, raising=False)
+    monkeypatch.setattr(torch.backends.cudnn, "benchmark", True, raising=False)
+
+    runner._initialize_seed()
+
+    assert recorded == [123]
+    assert torch.backends.cudnn.deterministic is True
+    assert torch.backends.cudnn.benchmark is False
+
+
 def test_experiment_runner_rejects_trainable_offline_representation_contract(tmp_path: Path) -> None:
     """ExperimentRunner should reject trainable representations paired with detached offline normality."""
 

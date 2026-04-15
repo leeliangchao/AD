@@ -57,6 +57,9 @@ class MVTecSingleClassDataset(Dataset[Sample]):
         self.category_root = self.root / self.category
         self._reference_image: Image.Image | None = None
 
+        if self.split not in {"train", "test"}:
+            raise ValueError(f"Unsupported split '{self.split}'. Expected one of: 'train', 'test'.")
+
         if not self.category_root.exists():
             raise FileNotFoundError(f"MVTec category path does not exist: {self.category_root}")
 

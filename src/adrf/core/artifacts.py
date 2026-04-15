@@ -66,7 +66,7 @@ class NormalityArtifacts:
             "primary": dict(self.primary),
             "auxiliary": dict(self.auxiliary),
             "diagnostics": dict(self.diagnostics),
-            "capabilities": set(self.capabilities),
+            "capabilities": sorted(self.capabilities),
         }
 
     @classmethod

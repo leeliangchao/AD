@@ -251,6 +251,15 @@ class MVTecDataModule:
 
         val_count = int(total_samples * self.val_split)
         calibration_count = int(total_samples * self.calibration_split)
+        if self.val_split > 0.0 and val_count == 0:
+            raise ValueError(
+                f"val_split={self.val_split} would round down to an empty held-out split for {total_samples} samples."
+            )
+        if self.calibration_split > 0.0 and calibration_count == 0:
+            raise ValueError(
+                "calibration_split="
+                f"{self.calibration_split} would round down to an empty held-out split for {total_samples} samples."
+            )
         reserved_count = val_count + calibration_count
         if reserved_count >= total_samples:
             raise ValueError("validation/calibration splits must leave at least one training sample.")

@@ -337,3 +337,33 @@ def test_dataset_rejects_missing_explicit_reference_path_eagerly(tmp_path: Path)
             split="train",
             reference_path=missing_reference_path,
         )
+
+
+def test_dataset_rejects_unknown_split_instead_of_falling_back_to_test(tmp_path: Path) -> None:
+    root = tmp_path / "mvtec"
+    _write_rgb_image(root / "bottle" / "train" / "good" / "000.png", (20, 30, 40))
+    _write_rgb_image(root / "bottle" / "test" / "good" / "001.png", (40, 50, 60))
+
+    with pytest.raises(ValueError, match="Unsupported split"):
+        MVTecSingleClassDataset(root=root, category="bottle", split="val")  # type: ignore[arg-type]
+
+
+def test_datamodule_rejects_positive_holdouts_that_round_down_to_empty_splits(tmp_path: Path) -> None:
+    root = tmp_path / "mvtec"
+    _write_rgb_image(root / "bottle" / "train" / "good" / "000.png", (20, 30, 40))
+    _write_rgb_image(root / "bottle" / "train" / "good" / "001.png", (30, 40, 50))
+    _write_rgb_image(root / "bottle" / "test" / "good" / "002.png", (40, 50, 60))
+
+    datamodule = MVTecDataModule(
+        root=root,
+        category="bottle",
+        batch_size=2,
+        num_workers=0,
+        normalize=False,
+        val_split=0.25,
+        calibration_split=0.25,
+        split_seed=7,
+    )
+
+    with pytest.raises(ValueError, match="would round down to an empty held-out split"):
+        datamodule.setup()

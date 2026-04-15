@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from contextlib import nullcontext
+import hashlib
 import math
 from typing import Sequence
 from typing import Any
@@ -33,6 +34,23 @@ def _normalize_channel_mults(
     if not normalized or any(multiplier < 1 for multiplier in normalized):
         raise ValueError("channel_mults must be a non-empty sequence of positive integers.")
     return normalized
+
+
+def _deterministic_noise_like(tensor: torch.Tensor, *identity_parts: object) -> torch.Tensor:
+    """Sample deterministic Gaussian noise from a stable identity tuple."""
+
+    generator = torch.Generator(device="cpu")
+    generator.manual_seed(_stable_identity_seed(*identity_parts))
+    noise = torch.randn(tensor.shape, generator=generator, dtype=torch.float32, device="cpu")
+    return noise.to(device=tensor.device, dtype=tensor.dtype)
+
+
+def _stable_identity_seed(*parts: object) -> int:
+    """Map arbitrary identity parts onto one stable integer seed."""
+
+    payload = "||".join("" if part is None else str(part) for part in parts)
+    digest = hashlib.sha256(payload.encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], byteorder="big", signed=False) % (2**31)
 
 
 class _ResidualConvBlock(nn.Module):
@@ -293,13 +311,28 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
         """Run one single-step noise-prediction pass and emit diffusion artifacts."""
 
         clean_image = self.require_representation_tensor(representation).float().unsqueeze(0)
+        inference_identity = sample.sample_id or representation.sample_id or "inference"
+        target_noise = _deterministic_noise_like(
+            clean_image,
+            type(self).__name__,
+            inference_identity,
+            self.num_train_timesteps,
+            self.noise_level,
+        )
         with torch.no_grad():
             if self.backend == "diffusers":
                 self._ensure_diffusers_backend(sample_size=int(clean_image.shape[-1]))
-                predicted_noise, target_noise = self.diffusers_adapter.forward_infer_step(clean_image)
+                predicted_noise, target_noise = self.diffusers_adapter.forward_infer_step(
+                    clean_image,
+                    target_noise=target_noise,
+                )
                 inference_timestep = self.num_train_timesteps - 1
             else:
-                noisy_image, target_noise, timesteps, noise_scales = self._sample_noisy_inputs(clean_image, inference=True)
+                noisy_image, target_noise, timesteps, noise_scales = self._sample_noisy_inputs(
+                    clean_image,
+                    inference=True,
+                    target_noise=target_noise,
+                )
                 predicted_noise = self.denoiser(noisy_image, timesteps, noise_scales)
                 inference_timestep = int(timesteps[0].item())
         return NormalityArtifacts(
@@ -330,12 +363,14 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
         clean_batch: torch.Tensor,
         *,
         inference: bool = False,
+        target_noise: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Sample Gaussian noise and produce the corresponding noisy inputs."""
 
         timesteps = self._sample_timesteps(clean_batch.shape[0], clean_batch.device, inference=inference)
         noise_scale = self._noise_scale_from_timesteps(timesteps).view(-1, 1, 1, 1)
-        target_noise = torch.randn_like(clean_batch)
+        if target_noise is None:
+            target_noise = torch.randn_like(clean_batch)
         noisy_batch = clean_batch + noise_scale * target_noise
         return noisy_batch, target_noise, timesteps, noise_scale.view(-1)
 
@@ -380,6 +415,7 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
             learning_rate=self.learning_rate,
             noise_level=self.noise_level,
             sample_size=sample_size,
+            num_train_timesteps=self.num_train_timesteps,
         )
         self.diffusers_adapter.to(self.runtime.device)
         install_normality_runtime_state(self.diffusers_adapter, self.runtime)

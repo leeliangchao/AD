@@ -19,8 +19,11 @@ class FeatureMemoryNormality(BaseNormalityModel):
     accepted_tensor_ranks = frozenset({1, 3})
     requires_detached_representation = True
 
-    def __init__(self) -> None:
+    def __init__(self, distance_chunk_size: int | None = 4096) -> None:
+        if distance_chunk_size is not None and distance_chunk_size < 1:
+            raise ValueError("distance_chunk_size must be positive when provided.")
         self.memory_bank: torch.Tensor | None = None
+        self.distance_chunk_size = distance_chunk_size
 
     def fit(
         self,
@@ -46,8 +49,7 @@ class FeatureMemoryNormality(BaseNormalityModel):
 
         feature_response = self.require_representation_tensor(representation)
         flattened, spatial_shape = self._flatten_feature_tensor(feature_response)
-        distances = torch.cdist(flattened, self.memory_bank)
-        min_distances = distances.min(dim=1).values
+        min_distances = self._min_memory_distances(flattened, self.memory_bank)
         if spatial_shape is not None:
             memory_distance = min_distances.reshape(spatial_shape)
         else:
@@ -81,3 +83,15 @@ class FeatureMemoryNormality(BaseNormalityModel):
             flattened = tensor.permute(1, 2, 0).reshape(height * width, channels)
             return flattened, (height, width)
         raise TypeError("FeatureMemoryNormality expects feature tensors with 1, 2, or 3 dimensions.")
+
+    def _min_memory_distances(self, flattened: torch.Tensor, memory_bank: torch.Tensor) -> torch.Tensor:
+        """Compute nearest-memory distances, optionally chunking queries to cap peak memory."""
+
+        if self.distance_chunk_size is None or flattened.shape[0] <= self.distance_chunk_size:
+            return torch.cdist(flattened, memory_bank).min(dim=1).values
+
+        chunks = []
+        for start in range(0, flattened.shape[0], self.distance_chunk_size):
+            query_chunk = flattened[start : start + self.distance_chunk_size]
+            chunks.append(torch.cdist(query_chunk, memory_bank).min(dim=1).values)
+        return torch.cat(chunks, dim=0)
