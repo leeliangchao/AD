@@ -104,18 +104,22 @@ class BasicADEvaluator(Evaluator):
         else:
             array = np.asarray(value)
 
+        if array.ndim == 0:
+            if require_2d:
+                raise ValueError(f"{name} must be a 2D spatial map when pixel metrics are required.")
+            return array.reshape(1, 1)
+        if array.ndim == 1:
+            if require_2d:
+                raise ValueError(f"{name} must be a 2D spatial map when pixel metrics are required.")
+            return array
+        if array.ndim == 2:
+            return array
+        if array.ndim == 3 and array.shape[0] == 1:
+            return array[0]
         squeezed = np.squeeze(array)
-        if squeezed.ndim == 0:
-            if require_2d:
-                raise ValueError(f"{name} must be a 2D spatial map when pixel metrics are required.")
-            return squeezed.reshape(1, 1)
-        if squeezed.ndim == 1:
-            if require_2d:
-                raise ValueError(f"{name} must be a 2D spatial map when pixel metrics are required.")
-            return squeezed
         if squeezed.ndim == 2:
             return squeezed
-        raise ValueError(f"{name} must be 1D or 2D after squeezing.")
+        raise ValueError(f"{name} must be 1D or 2D after normalization.")
 
     def update(self, prediction: Mapping[str, Any], sample: Sample) -> None:
         """Store one prediction/sample pair for later metric computation."""
