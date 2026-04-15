@@ -154,6 +154,28 @@ class _EvalAwareNormality(nn.Module, BaseNormalityModel):
         return object()
 
 
+class _DistributedSummaryJointNormality(nn.Module, BaseNormalityModel):
+    fit_mode = "joint"
+    accepted_spaces = frozenset({"feature"})
+    accepted_tensor_ranks = frozenset({3})
+    requires_detached_representation = False
+
+    def configure_joint_training(self, representation_model: nn.Module) -> None:
+        del representation_model
+
+    def fit_batch(self, representations: RepresentationBatch, samples) -> dict[str, float]:
+        del representations, samples
+        return {"loss": 1.0}
+
+    def fit(self, representations, samples=None) -> None:
+        del representations, samples
+        raise AssertionError("joint mode should not call fit().")
+
+    def infer(self, sample, representation):
+        del sample, representation
+        raise AssertionError("test does not exercise inference.")
+
+
 class _NoopEvidence:
     def predict(self, sample, artifacts):
         del sample, artifacts
@@ -242,7 +264,6 @@ def test_one_class_protocol_evaluate_temporarily_switches_trainable_modules_to_e
     assert normality.infer_training_states == [False]
     assert int(representation.batch_norm.num_batches_tracked.item()) == before_batches
 
-
 class _DistributedSummaryJointNormality(nn.Module, BaseNormalityModel):
     fit_mode = "joint"
     accepted_spaces = frozenset({"feature"})
@@ -263,8 +284,6 @@ class _DistributedSummaryJointNormality(nn.Module, BaseNormalityModel):
     def infer(self, sample, representation):
         del sample, representation
         raise AssertionError("test does not exercise inference.")
-
-
 def test_one_class_protocol_joint_fit_aggregates_distributed_train_summary(
     tmp_path: Path,
     monkeypatch,

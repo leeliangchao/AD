@@ -18,6 +18,20 @@ from adrf.representation.feature import FeatureRepresentation
 from adrf.representation.pixel import PixelRepresentation
 
 
+class _RecordingOfflineNormality:
+    def __init__(self) -> None:
+        self.fit_calls: list[tuple[int, int]] = []
+
+    def fit(self, representations, samples=None) -> None:
+        representation_list = list(representations)
+        sample_list = [] if samples is None else list(samples)
+        self.fit_calls.append((len(representation_list), len(sample_list)))
+
+    def infer(self, sample, representation):
+        del sample, representation
+        raise AssertionError("test does not exercise inference.")
+
+
 class _BatchOnlyFeatureRepresentation(FeatureRepresentation):
     def __init__(self) -> None:
         super().__init__(pretrained=False, freeze=True, input_image_size=(64, 64), input_normalize=False)
@@ -116,7 +130,6 @@ def test_one_class_protocol_runs_reconstruction_baseline(tmp_path: Path) -> None
     assert train_summary["num_train_samples"] == 2
     assert set(metrics) == {"image_auroc", "pixel_auroc", "pixel_aupr"}
 
-
 class _RecordingOfflineNormality:
     def __init__(self) -> None:
         self.fit_calls: list[tuple[int, int]] = []
@@ -129,8 +142,6 @@ class _RecordingOfflineNormality:
     def infer(self, sample, representation):
         del sample, representation
         raise AssertionError("test does not exercise inference.")
-
-
 def test_one_class_protocol_offline_fit_aggregates_distributed_train_summary(
     tmp_path: Path,
     monkeypatch,
