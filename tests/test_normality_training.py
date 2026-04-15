@@ -45,6 +45,10 @@ class _UnsupportedModeNormality:
     fit_mode = "weird"
 
 
+class _IncompleteOfflineNormality:
+    fit_mode = "offline"
+
+
 class _IncompleteJointNormality:
     fit_mode = "joint"
 
@@ -120,6 +124,11 @@ def test_joint_normality_training_adapter_delegates_configure_and_fit_batch() ->
 def test_resolve_normality_training_adapter_rejects_unsupported_mode() -> None:
     with pytest.raises(ValueError, match="Unsupported normality fit mode"):
         resolve_normality_training_adapter(_UnsupportedModeNormality())
+
+
+def test_resolve_normality_training_adapter_rejects_incomplete_offline_contract() -> None:
+    with pytest.raises(RuntimeError, match="must implement offline training fit"):
+        resolve_normality_training_adapter(_IncompleteOfflineNormality())
 
 
 def test_resolve_normality_training_adapter_rejects_incomplete_joint_contract() -> None:

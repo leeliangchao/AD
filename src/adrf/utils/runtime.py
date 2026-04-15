@@ -14,7 +14,11 @@ from torch.nn.parallel import DistributedDataParallel
 
 from adrf.core.sample import Sample
 from adrf.normality.runtime import resolve_normality_runtime_spec
-from adrf.normality.state import NormalityRuntimeState, install_normality_runtime_state
+from adrf.normality.state import (
+    NormalityRuntimeState,
+    install_normality_runtime_state,
+    make_default_normality_runtime_state,
+)
 from adrf.utils.config import load_yaml_config
 from adrf.utils.distributed import DistributedRuntimeContext
 
@@ -480,13 +484,15 @@ def _runtime_state(model: object) -> NormalityRuntimeState:
     if isinstance(runtime, NormalityRuntimeState):
         return runtime
 
-    return NormalityRuntimeState(
+    fallback = make_default_normality_runtime_state()
+    runtime_state = NormalityRuntimeState(
         device=getattr(model, "runtime_device", torch.device("cpu")),
         amp_enabled=bool(getattr(model, "amp_enabled", False)),
-        grad_scaler=getattr(model, "grad_scaler", torch.amp.GradScaler("cuda", enabled=False)),
+        grad_scaler=getattr(model, "grad_scaler", fallback.grad_scaler),
         distributed_context=getattr(model, "distributed_context", DistributedRuntimeContext()),
         distributed_training_enabled=bool(getattr(model, "distributed_training_enabled", False)),
     )
+    return install_normality_runtime_state(model, runtime_state)
 
 
 def _make_diffusion_fit(model: Any):
