@@ -18,14 +18,17 @@ def _aggregated_record(
     pixel_aupr: float,
     train_time: float,
     total_time: float,
+    *,
+    representation: str | None = None,
+    backend: str | None = None,
 ) -> dict[str, object]:
-    representation = "feature" if normality == "feature_memory" else "pixel"
     return {
         "experiment_name": f"{dataset}__{normality}__{evidence}",
         "dataset": dataset,
-        "representation": representation,
+        "representation": representation or ("feature" if normality == "feature_memory" else "pixel"),
         "normality": normality,
         "evidence": evidence,
+        "budget": {"backend": backend} if backend is not None else {},
         "seed_count": 3,
         "aggregated_metrics": {
             "image_auroc": {"mean": image_auroc, "std": 0.01},
@@ -172,3 +175,45 @@ def test_export_grouped_paper_tables_reads_matrix_aggregated_payload(tmp_path: P
     assert outputs["paper_csv"].exists()
     assert outputs["category_mean_csv"].exists()
     assert outputs["by_axis_csv"].exists()
+
+
+def test_write_grouped_paper_tables_keeps_distinct_representation_backend_rows_separate(tmp_path: Path) -> None:
+    outputs = write_grouped_paper_tables(
+        aggregated_records=[
+            _aggregated_record(
+                dataset="mvtec_bottle",
+                normality="diffusion_basic",
+                evidence="noise_residual",
+                representation="pixel",
+                backend="legacy",
+                image_auroc=0.90,
+                pixel_auroc=0.80,
+                pixel_aupr=0.70,
+                train_time=1.0,
+                total_time=1.5,
+            ),
+            _aggregated_record(
+                dataset="mvtec_capsule",
+                normality="diffusion_basic",
+                evidence="noise_residual",
+                representation="feature",
+                backend="diffusers",
+                image_auroc=0.80,
+                pixel_auroc=0.70,
+                pixel_aupr=0.60,
+                train_time=1.2,
+                total_time=1.7,
+            ),
+        ],
+        output_dir=tmp_path / "tables",
+        title="distinct_methods",
+    )
+
+    with outputs["category_mean_csv"].open(encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+
+    assert len(rows) == 2
+    assert {(row["representation"], row["backend"]) for row in rows} == {
+        ("pixel", "legacy"),
+        ("feature", "diffusers"),
+    }

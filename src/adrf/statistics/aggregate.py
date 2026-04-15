@@ -47,6 +47,13 @@ def aggregate_grouped_seed_results(records: list[dict[str, Any]]) -> list[dict[s
     for group_name, group_records in grouped.items():
         first = group_records[0]
         completed_records = [record for record in group_records if record.get("status") == "completed"]
+        all_completed = len(completed_records) == len(group_records)
+        if all_completed:
+            group_status = "completed"
+        elif completed_records:
+            group_status = "partial_failed"
+        else:
+            group_status = "failed"
         aggregated_metrics = aggregate_seed_metrics(completed_records)
         aggregated_records.append(
             {
@@ -56,7 +63,7 @@ def aggregate_grouped_seed_results(records: list[dict[str, Any]]) -> list[dict[s
                 "representation": first.get("representation", ""),
                 "normality": first.get("normality", ""),
                 "evidence": first.get("evidence", ""),
-                "status": "completed" if completed_records else "failed",
+                "status": group_status,
                 "seed_count": len(group_records),
                 "aggregated_metrics": aggregated_metrics,
                 "seed_runs": [
@@ -72,4 +79,3 @@ def aggregate_grouped_seed_results(records: list[dict[str, Any]]) -> list[dict[s
 
     aggregated_records.sort(key=lambda item: str(item.get("group_name", "")))
     return aggregated_records
-

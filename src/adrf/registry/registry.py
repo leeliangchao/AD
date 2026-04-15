@@ -27,7 +27,9 @@ class Registry:
     def register(self, group: str, name: str, obj: Any) -> None:
         """Register an object under a group/name pair."""
 
-        bucket = self.groups.setdefault(group, {})
+        bucket = self.groups.get(group)
+        if bucket is None:
+            raise KeyError(f"Registry received unknown group '{group}'.")
         if name in bucket:
             raise KeyError(f"Object '{name}' is already registered in group '{group}'.")
         bucket[name] = obj
@@ -35,6 +37,8 @@ class Registry:
     def get(self, group: str, name: str) -> Any:
         """Retrieve a registered object by group and name."""
 
+        if group not in self.groups:
+            raise KeyError(f"Registry received unknown group '{group}'.")
         if not self.exists(group, name):
             raise KeyError(f"Object '{name}' is not registered in group '{group}'.")
         return self.groups[group][name]
@@ -48,4 +52,3 @@ class Registry:
         """List registered names for a group in sorted order."""
 
         return sorted(self.groups.get(group, {}))
-

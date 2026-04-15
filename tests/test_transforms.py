@@ -75,3 +75,17 @@ def test_sample_transform_normalizes_reference_tensor_values() -> None:
 
     assert torch.isclose(transformed.reference.min(), torch.tensor(1.0))
     assert torch.isclose(transformed.reference.max(), torch.tensor(1.0))
+
+
+def test_sample_transform_treats_pil_and_uint8_tensor_images_equally() -> None:
+    """Equivalent PIL and uint8 tensor images should produce the same float tensor."""
+
+    transform = SampleTransform(image_size=(2, 2), normalize=False)
+    rgb = (255, 128, 0)
+    pil_sample = Sample(image=Image.new("RGB", (2, 2), color=rgb))
+    tensor_sample = Sample(image=torch.tensor(rgb, dtype=torch.uint8).view(3, 1, 1).expand(3, 2, 2))
+
+    pil_transformed = transform(pil_sample)
+    tensor_transformed = transform(tensor_sample)
+
+    assert torch.allclose(pil_transformed.image, tensor_transformed.image)

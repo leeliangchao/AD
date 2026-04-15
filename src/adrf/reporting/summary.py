@@ -32,8 +32,8 @@ def _write_summary_files(
     for record in records:
         metrics = record.get("metrics", {})
         run_info = _load_run_info(record.get("run_path", ""))
-        runtime = _extract_runtime_info(run_info)
-        budget = _extract_budget_info(run_info)
+        runtime = _coalesce_runtime_info(record, run_info)
+        budget = _coalesce_budget_info(record, run_info)
         artifact_info = _extract_artifact_info(run_info)
         lines.append(
             "| {experiment_name} | {status} | {normality} | {evidence} | {device} | {budget} | {total_time_s} | {image_auroc} | {pixel_auroc} | {pixel_aupr} | {run_path} | {report_path} |".format(
@@ -85,8 +85,8 @@ def _write_summary_files(
         for record in records:
             metrics = record.get("metrics", {})
             run_info = _load_run_info(record.get("run_path", ""))
-            runtime = _extract_runtime_info(run_info)
-            budget = _extract_budget_info(run_info)
+            runtime = _coalesce_runtime_info(record, run_info)
+            budget = _coalesce_budget_info(record, run_info)
             artifact_info = _extract_artifact_info(run_info)
             writer.writerow(
                 {
@@ -228,6 +228,32 @@ def _extract_budget_info(run_info: dict[str, Any]) -> dict[str, Any]:
 
     budget = run_info.get("budget", {})
     return budget if isinstance(budget, dict) else {}
+
+
+def _coalesce_runtime_info(record: dict[str, Any], run_info: dict[str, Any]) -> dict[str, Any]:
+    """Prefer persisted run-info runtime metadata, then fall back to record metrics."""
+
+    runtime = _extract_runtime_info(run_info)
+    if runtime:
+        return runtime
+    metrics = record.get("metrics", {})
+    if not isinstance(metrics, dict):
+        return {}
+    return {
+        "total_time_s": metrics.get("total_time", ""),
+        "train_time_s": metrics.get("train_time", ""),
+        "eval_time_s": metrics.get("eval_time", ""),
+    }
+
+
+def _coalesce_budget_info(record: dict[str, Any], run_info: dict[str, Any]) -> dict[str, Any]:
+    """Prefer persisted run-info budget metadata, then fall back to the record payload."""
+
+    budget = _extract_budget_info(run_info)
+    if budget:
+        return budget
+    record_budget = record.get("budget", {})
+    return record_budget if isinstance(record_budget, dict) else {}
 
 
 def _extract_artifact_info(run_info: dict[str, Any]) -> dict[str, Any]:
