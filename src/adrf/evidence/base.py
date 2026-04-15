@@ -12,6 +12,7 @@ import torch
 from adrf.core.artifacts import NormalityArtifacts
 from adrf.core.interfaces import EvidenceModel
 from adrf.core.sample import Sample
+from adrf.evidence.prediction import EvidencePrediction
 from adrf.evaluation.aggregators import max_pool_score, mean_pool_score, topk_mean_score
 
 
@@ -47,11 +48,11 @@ class BaseEvidenceModel(EvidenceModel, ABC):
         score = image_score if image_score is not None else self.aggregator_fn(anomaly_map)
         payload = dict(aux_scores or {})
         payload.setdefault("aggregator", self.aggregator_name)
-        return {
-            "anomaly_map": anomaly_map,
-            "image_score": float(score),
-            "aux_scores": payload,
-        }
+        return EvidencePrediction(
+            anomaly_map=anomaly_map,
+            image_score=float(score),
+            aux_scores=payload,
+        ).to_dict()
 
     @staticmethod
     def require_image_tensor(sample: Sample) -> torch.Tensor:
@@ -74,4 +75,3 @@ class BaseEvidenceModel(EvidenceModel, ABC):
             available = ", ".join(sorted(aggregators))
             raise ValueError(f"Unknown aggregator '{name}'. Available aggregators: {available}.")
         return aggregators[name]
-

@@ -47,3 +47,27 @@ class NormalityArtifacts:
 
         return self.diagnostics.get(key, default)
 
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize one artifacts payload into a plain mapping."""
+
+        return {
+            "context": dict(self.context),
+            "representation": dict(self.representation),
+            "primary": dict(self.primary),
+            "auxiliary": dict(self.auxiliary),
+            "diagnostics": dict(self.diagnostics),
+            "capabilities": set(self.capabilities),
+        }
+
+    @classmethod
+    def from_mapping(cls, payload: DataDict) -> "NormalityArtifacts":
+        """Build artifacts from a serialized mapping payload."""
+
+        return cls(
+            context=dict(payload.get("context", {})),
+            representation=dict(payload.get("representation", {})),
+            primary=dict(payload.get("primary", {})),
+            auxiliary=dict(payload.get("auxiliary", {})),
+            diagnostics=dict(payload.get("diagnostics", {})),
+            capabilities=set(payload.get("capabilities", set())),
+        )

@@ -56,3 +56,23 @@ def test_artifacts_use_independent_default_containers() -> None:
 
     assert second.context == {}
     assert second.capabilities == set()
+
+
+def test_artifacts_round_trip_serialized_payload() -> None:
+    artifacts = NormalityArtifacts(
+        context={"sample_id": "sample-001"},
+        representation={"space": "feature"},
+        primary={"projection": [1.0]},
+        auxiliary={"memory_distance": 0.25},
+        diagnostics={"fit_loss": 0.1},
+        capabilities={"projection", "memory_distance"},
+    )
+
+    restored = NormalityArtifacts.from_mapping(artifacts.to_dict())
+
+    assert restored.context == {"sample_id": "sample-001"}
+    assert restored.representation == {"space": "feature"}
+    assert restored.primary == {"projection": [1.0]}
+    assert restored.auxiliary == {"memory_distance": 0.25}
+    assert restored.diagnostics == {"fit_loss": 0.1}
+    assert restored.capabilities == {"projection", "memory_distance"}
