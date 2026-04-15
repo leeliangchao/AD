@@ -28,6 +28,10 @@ class SampleTransform:
         image = self._transform_image(sample.image)
         mask = self._transform_mask(sample.mask)
         reference = self._transform_reference(sample.reference)
+        metadata = dict(sample.metadata)
+        metadata["_transform_normalize"] = self.normalize
+        metadata["_transform_mean"] = list(self.mean)
+        metadata["_transform_std"] = list(self.std)
         return Sample(
             image=image,
             label=sample.label,
@@ -36,7 +40,7 @@ class SampleTransform:
             sample_id=sample.sample_id,
             reference=reference,
             views=dict(sample.views) if sample.views is not None else None,
-            metadata=dict(sample.metadata),
+            metadata=metadata,
         )
 
     def _transform_image(self, image: Image.Image | torch.Tensor) -> torch.Tensor:

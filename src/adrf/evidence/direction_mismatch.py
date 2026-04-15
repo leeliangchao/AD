@@ -33,20 +33,28 @@ class DirectionMismatchEvidence(BaseEvidenceModel):
         if len(trajectory) < 2:
             raise ValueError("DirectionMismatchEvidence requires at least two trajectory states.")
 
-        transition_maps = []
+        transitions = []
         for previous_state, current_state in zip(trajectory[:-1], trajectory[1:], strict=True):
             if not isinstance(previous_state, torch.Tensor) or not isinstance(current_state, torch.Tensor):
                 raise TypeError("Each trajectory state must be a torch.Tensor.")
             if previous_state.shape != current_state.shape:
                 raise ValueError("All trajectory states must share the same shape.")
-            transition = torch.abs(current_state.float() - previous_state.float())
-            transition_maps.append(self._reduce_channels(transition))
+            transitions.append(current_state.float() - previous_state.float())
 
-        stacked = torch.stack(transition_maps, dim=0)
-        if self.direction_reduce == "sum":
-            anomaly_map = stacked.sum(dim=0)
+        mismatch_maps = []
+        for previous_delta, current_delta in zip(transitions[:-1], transitions[1:], strict=True):
+            # Penalize per-pixel sign reversals between consecutive trajectory steps.
+            reversal = torch.relu(-(previous_delta * current_delta))
+            mismatch_maps.append(self._reduce_channels(reversal))
+
+        if not mismatch_maps:
+            anomaly_map = torch.zeros_like(self._reduce_channels(transitions[0]))
         else:
-            anomaly_map = stacked.mean(dim=0)
+            stacked = torch.stack(mismatch_maps, dim=0)
+            if self.direction_reduce == "sum":
+                anomaly_map = stacked.sum(dim=0)
+            else:
+                anomaly_map = stacked.mean(dim=0)
 
         return self.build_prediction(
             anomaly_map,

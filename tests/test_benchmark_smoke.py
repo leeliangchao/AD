@@ -5,6 +5,8 @@ from pathlib import Path
 import subprocess
 import sys
 
+import yaml
+
 from adrf.benchmark.runner import BenchmarkRunner
 
 
@@ -102,3 +104,55 @@ def test_benchmark_runner_reports_invalid_experiment_config_cleanly(tmp_path: Pa
     record = results["experiments"][0]
     assert record["status"] == "failed"
     assert "must load to a mapping" in record["error"]
+
+
+def test_benchmark_runner_snapshot_preserves_resolved_experiment_configs(tmp_path: Path) -> None:
+    experiment = tmp_path / "experiment.yaml"
+    experiment.write_text(
+        "\n".join(
+            [
+                "datamodule:",
+                "  name: mvtec_single_class",
+                "  params:",
+                "    root: tests/fixtures/mvtec",
+                "    category: bottle",
+                "representation:",
+                "  name: pixel",
+                "  params: {}",
+                "normality:",
+                "  name: feature_memory",
+                "  params: {}",
+                "evidence:",
+                "  name: feature_distance",
+                "  params:",
+                "    aggregator: max",
+                "evaluator:",
+                "  name: basic_ad",
+                "  params: {}",
+                "protocol:",
+                "  name: one_class",
+                "  params: {}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    suite_path = tmp_path / "suite.yaml"
+    suite_path.write_text(
+        "\n".join(
+            [
+                "name: snapshot_suite",
+                "continue_on_error: true",
+                f"experiments:\n  - {experiment}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    results = BenchmarkRunner(suite_path, output_root=tmp_path / "outputs").run()
+    snapshot = yaml.safe_load((Path(results["suite_dir"]) / "suite_config_snapshot.yaml").read_text(encoding="utf-8"))
+
+    experiment.write_text("name: mutated\n", encoding="utf-8")
+
+    resolved = snapshot["resolved_experiments"][0]
+    assert resolved["path"] == str(experiment)
+    assert resolved["config"]["datamodule"]["params"]["category"] == "bottle"

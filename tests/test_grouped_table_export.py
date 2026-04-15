@@ -217,3 +217,35 @@ def test_write_grouped_paper_tables_keeps_distinct_representation_backend_rows_s
         ("pixel", "legacy"),
         ("feature", "diffusers"),
     }
+
+
+def test_grouped_table_export_marks_partial_failed_rows_explicitly(tmp_path: Path) -> None:
+    outputs = write_grouped_paper_tables(
+        aggregated_records=[
+            {
+                **_aggregated_record(
+                    dataset="mvtec_bottle",
+                    normality="diffusion_basic",
+                    evidence="noise_residual",
+                    representation="pixel",
+                    backend="legacy",
+                    image_auroc=0.90,
+                    pixel_auroc=0.80,
+                    pixel_aupr=0.70,
+                    train_time=1.0,
+                    total_time=1.5,
+                ),
+                "status": "partial_failed",
+            }
+        ],
+        output_dir=tmp_path / "tables",
+        title="partial_demo",
+    )
+
+    paper_markdown = outputs["paper_markdown"].read_text(encoding="utf-8")
+    category_markdown = outputs["category_mean_markdown"].read_text(encoding="utf-8")
+    by_axis_markdown = outputs["by_axis_markdown"].read_text(encoding="utf-8")
+
+    assert "partial_failed" in paper_markdown
+    assert "partial_failed" in category_markdown
+    assert "partial_failed" in by_axis_markdown

@@ -95,15 +95,18 @@ class DiffusionInversionBasicNormality(DiffusionBasicNormality):
                     current_noise_scale = rollout_scales[step_index].expand(current_state.shape[0])
                     predicted_noise = self.denoiser(current_state, timestep_batch, current_noise_scale)
                 trajectory.append(current_state.squeeze(0).detach().clone())
-                step_costs.append(predicted_noise.abs().mean(dim=1).squeeze(0).detach().clone())
                 if step_index < self.num_steps - 1:
                     rollout_scale = rollout_scales[step_index].view(-1, 1, 1, 1)
                     next_scale = rollout_scales[step_index + 1].view(-1, 1, 1, 1)
                     predicted_clean = current_state - rollout_scale * predicted_noise
                     scale_delta = (rollout_scale - next_scale).clamp_min(0.0)
-                    current_state = current_state - self.step_size * self.rollout_gain * scale_delta * predicted_noise
+                    next_state = current_state - self.step_size * self.rollout_gain * scale_delta * predicted_noise
                     if self.denoised_blend > 0:
-                        current_state = (1.0 - self.denoised_blend) * current_state + self.denoised_blend * predicted_clean
+                        next_state = (1.0 - self.denoised_blend) * next_state + self.denoised_blend * predicted_clean
+                    step_costs.append((next_state - current_state).abs().mean(dim=1).squeeze(0).detach().clone())
+                    current_state = next_state
+                else:
+                    step_costs.append(torch.zeros_like(current_state.mean(dim=1).squeeze(0)))
 
         final_state = trajectory[-1]
         return NormalityArtifacts(

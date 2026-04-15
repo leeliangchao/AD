@@ -26,14 +26,15 @@ def write_paper_tables(
     lines = [
         f"# {title}",
         "",
-        "| Experiment | Dataset | Normality | Evidence | Image AUROC | Pixel AUROC | Pixel AUPR | Train Time | Eval Time | Total Time |",
-        "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| Experiment | Status | Dataset | Normality | Evidence | Image AUROC | Pixel AUROC | Pixel AUPR | Train Time | Eval Time | Total Time |",
+        "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for record in aggregated_records:
         metrics = record.get("aggregated_metrics", {})
         lines.append(
-            "| {experiment} | {dataset} | {normality} | {evidence} | {image_auroc} | {pixel_auroc} | {pixel_aupr} | {train_time} | {eval_time} | {total_time} |".format(
+            "| {experiment} | {status} | {dataset} | {normality} | {evidence} | {image_auroc} | {pixel_auroc} | {pixel_aupr} | {train_time} | {eval_time} | {total_time} |".format(
                 experiment=record.get("experiment_name", ""),
+                status=record.get("status", ""),
                 dataset=record.get("dataset", ""),
                 normality=record.get("normality", ""),
                 evidence=record.get("evidence", ""),
@@ -49,6 +50,7 @@ def write_paper_tables(
 
     fieldnames = [
         "experiment_name",
+        "status",
         "dataset",
         "representation",
         "normality",
@@ -82,6 +84,7 @@ def write_paper_tables(
             writer.writerow(
                 {
                     "experiment_name": record.get("experiment_name", ""),
+                    "status": record.get("status", ""),
                     "dataset": record.get("dataset", ""),
                     "representation": record.get("representation", ""),
                     "normality": record.get("normality", ""),
@@ -144,6 +147,7 @@ def write_grouped_paper_tables(
         title=f"{title} Category Mean",
         markdown_columns=(
             ("method", "Method"),
+            ("status", "Status"),
             ("normality", "Normality"),
             ("evidence", "Evidence"),
             ("dataset_count", "Datasets"),
@@ -155,6 +159,7 @@ def write_grouped_paper_tables(
         ),
         csv_fieldnames=(
             "method",
+            "status",
             "normality",
             "evidence",
             "representation",
@@ -248,6 +253,7 @@ def _build_category_mean_records(aggregated_records: list[dict[str, Any]]) -> li
         category_mean_records.append(
             {
                 "method": _method_label(first),
+                "status": _coalesce_status(records),
                 "normality": first.get("normality", ""),
                 "evidence": first.get("evidence", ""),
                 "representation": first.get("representation", ""),
@@ -296,14 +302,15 @@ def _write_axis_grouped_table(
         lines.append(f"## {section_name}")
         lines.append("")
         lines.append(
-            "| Axis Bucket | Method | Normality | Evidence | Image AUROC | Pixel AUROC | Pixel AUPR | Train Time | Total Time |"
+            "| Axis Bucket | Method | Status | Normality | Evidence | Image AUROC | Pixel AUROC | Pixel AUPR | Train Time | Total Time |"
         )
-        lines.append("| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: |")
+        lines.append("| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: |")
         for row in rows:
             lines.append(
-                "| {axis_bucket} | {method} | {normality} | {evidence} | {image_auroc} | {pixel_auroc} | {pixel_aupr} | {train_time} | {total_time} |".format(
+                "| {axis_bucket} | {method} | {status} | {normality} | {evidence} | {image_auroc} | {pixel_auroc} | {pixel_aupr} | {train_time} | {total_time} |".format(
                     axis_bucket=row.get("axis_bucket", ""),
                     method=row.get("method", ""),
+                    status=row.get("status", ""),
                     normality=row.get("normality", ""),
                     evidence=row.get("evidence", ""),
                     image_auroc=row.get("image_auroc_display", ""),
@@ -321,6 +328,7 @@ def _write_axis_grouped_table(
         "section",
         "axis_bucket",
         "method",
+        "status",
         "normality",
         "evidence",
         "representation",
@@ -461,6 +469,21 @@ def _method_label(record: dict[str, Any]) -> str:
         normality=record.get("normality", ""),
         evidence=record.get("evidence", ""),
     )
+
+
+def _coalesce_status(records: list[dict[str, Any]]) -> str:
+    """Summarize grouped record status for paper-facing exports."""
+
+    statuses = {str(record.get("status", "")) for record in records if record.get("status")}
+    if not statuses:
+        return ""
+    if statuses == {"completed"}:
+        return "completed"
+    if statuses == {"failed"}:
+        return "failed"
+    if "partial_failed" in statuses or ("completed" in statuses and "failed" in statuses):
+        return "partial_failed"
+    return ",".join(sorted(statuses))
 
 
 def _budget_value(budget: Any, key: str) -> Any:

@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import yaml
+
 from adrf.ablation.runner import AblationRunner
 
 
@@ -74,3 +76,53 @@ def test_ablation_runner_executes_matrix_and_writes_summary(tmp_path: Path) -> N
     assert (suite_dir / "ablation_summary.md").exists()
     assert (suite_dir / "ablation_summary.csv").exists()
 
+
+def test_ablation_runner_snapshot_preserves_resolved_paper_dataset_config(tmp_path: Path) -> None:
+    dataset_dir = tmp_path / "configs" / "dataset"
+    dataset_dir.mkdir(parents=True)
+    dataset_path = dataset_dir / "mvtec_bottle.yaml"
+    dataset_path.write_text(
+        "\n".join(
+            [
+                "name: mvtec_single_class",
+                "params:",
+                "  root: tests/fixtures/mvtec",
+                "  category: bottle",
+                "  reference_index: 0",
+                "  image_size: [32, 32]",
+                "  batch_size: 2",
+                "  num_workers: 0",
+                "  normalize: false",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    matrix_path = tmp_path / "paper_matrix.yaml"
+    matrix_path.write_text(
+        "\n".join(
+            [
+                "name: paper_snapshot_matrix",
+                "continue_on_error: true",
+                "datasets:",
+                "  - name: mvtec_bottle",
+                f"    dataset_config: {dataset_path}",
+                "normality: [feature_memory]",
+                "evidence: [feature_distance]",
+                "representation_map:",
+                "  feature_memory: feature",
+                "compatibility:",
+                "  feature_memory: [feature_distance]",
+                "protocol: one_class",
+                "evaluation: default",
+                "seeds: [0]",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    results = AblationRunner(matrix_path, output_root=tmp_path / "outputs").run()
+    snapshot = yaml.safe_load((Path(results["matrix_dir"]) / "matrix_config_snapshot.yaml").read_text(encoding="utf-8"))
+
+    dataset_path.write_text("name: mutated_dataset\n", encoding="utf-8")
+
+    assert snapshot["expanded_specs"][0]["config"]["datamodule"]["params"]["category"] == "bottle"

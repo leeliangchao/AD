@@ -9,6 +9,7 @@ from PIL import Image
 import torch
 
 from adrf.core.sample import Sample
+from adrf.data.transforms import SampleTransform
 from adrf.normality.reference_basic import ReferenceBasicNormality
 from adrf.representation.contracts import RepresentationOutput
 
@@ -116,6 +117,61 @@ def test_reference_basic_treats_uint8_tensor_reference_like_pil_reference() -> N
     )
 
     assert torch.allclose(pil_tensor, uint8_tensor)
+
+
+def test_reference_basic_preserves_already_normalized_float_reference_tensor() -> None:
+    image = torch.rand(3, 16, 16)
+    normalized_reference = torch.full((3, 16, 16), 2.25, dtype=torch.float32)
+    representation = make_pixel_output(image, sample_id="sample-ref")
+    model = ReferenceBasicNormality(
+        input_channels=3,
+        hidden_channels=8,
+        learning_rate=1e-3,
+        epochs=1,
+        batch_size=1,
+    )
+
+    prepared = model._prepare_reference_tensor(
+        Sample(image=image, reference=normalized_reference, sample_id="sample-ref"),
+        representation,
+    )
+
+    assert torch.allclose(prepared, normalized_reference)
+
+
+def test_reference_basic_applies_sample_normalization_policy_to_raw_pil_reference() -> None:
+    raw_sample = Sample(
+        image=Image.new("RGB", (16, 16), color=(255, 255, 255)),
+        reference=Image.new("RGB", (16, 16), color=(255, 128, 0)),
+        sample_id="sample-ref",
+    )
+    transform = SampleTransform(
+        image_size=(16, 16),
+        normalize=True,
+        mean=(0.5, 0.5, 0.5),
+        std=(0.5, 0.5, 0.5),
+    )
+    transformed = transform(raw_sample)
+    representation = make_pixel_output(transformed.image, sample_id="sample-ref")
+    model = ReferenceBasicNormality(
+        input_channels=3,
+        hidden_channels=8,
+        learning_rate=1e-3,
+        epochs=1,
+        batch_size=1,
+    )
+
+    prepared = model._prepare_reference_tensor(
+        Sample(
+            image=transformed.image,
+            reference=raw_sample.reference,
+            sample_id="sample-ref",
+            metadata=transformed.metadata,
+        ),
+        representation,
+    )
+
+    assert torch.allclose(prepared, transformed.reference)
 
 
 def test_reference_basic_legacy_mapping_emits_normalized_representation_payload() -> None:
