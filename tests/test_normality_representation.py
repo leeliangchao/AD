@@ -5,6 +5,7 @@ import torch
 from adrf.normality.representation import (
     NormalizedLegacyRepresentation,
     normalize_normality_representation_input,
+    rehome_normality_representation,
     serialize_normality_representation,
 )
 from adrf.representation.contracts import RepresentationProvenance
@@ -76,3 +77,19 @@ def test_normalize_normality_representation_input_explicitly_adapts_legacy_mappi
         "dtype": "torch.float32",
         "provenance": None,
     }
+
+
+def test_rehome_normality_representation_preserves_contract_on_target_device() -> None:
+    legacy = {
+        "representation": torch.ones(4, 2, 2),
+        "space_type": "feature",
+        "spatial_shape": (2, 2),
+        "feature_dim": 4,
+    }
+
+    moved = rehome_normality_representation(legacy, torch.device("cpu"))
+
+    assert isinstance(moved, NormalizedLegacyRepresentation)
+    assert moved.device == "cpu"
+    assert moved.dtype == "torch.float32"
+    assert torch.equal(moved.tensor, torch.ones(4, 2, 2))

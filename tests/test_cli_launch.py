@@ -105,3 +105,16 @@ def test_main_relaunches_under_torchrun_for_multi_gpu_runtime(tmp_path: Path) ->
     ]
     assert command[-2:] == ["adrf.cli.main", str(config_path.resolve())]
     assert kwargs["env"]["CUDA_VISIBLE_DEVICES"] == "0,3"
+
+
+def test_main_only_prints_results_on_primary_rank(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("RANK", "1")
+    monkeypatch.setenv("LOCAL_RANK", "1")
+    monkeypatch.setenv("WORLD_SIZE", "2")
+
+    with patch("adrf.cli.main.ExperimentRunner") as runner_cls:
+        runner_cls.return_value.run.return_value = {"train": {}, "evaluation": {"image_auroc": 1.0}}
+        exit_code = experiment_cli.main([])
+
+    assert exit_code == 0
+    assert capsys.readouterr().out == ""

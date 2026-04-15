@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections import defaultdict
+import torch
 
 from adrf.normality.training import (
     JointNormalityTrainingAdapter,
     OfflineNormalityTrainingAdapter,
     resolve_normality_training_adapter,
 )
+from adrf.normality.representation import rehome_normality_representation
 from adrf.protocol.context import ProtocolContext
 from adrf.protocol.results import TrainSummary
 from adrf.protocol import runtime_support
@@ -56,6 +58,16 @@ class OfflineTrainingStrategy(TrainingStrategy):
             for payload in gathered:
                 train_samples.extend(payload.get("samples", []))
                 train_representations.extend(payload.get("representations", []))
+
+            target_device = getattr(
+                getattr(context.normality, "runtime", None),
+                "device",
+                getattr(context.normality, "runtime_device", torch.device("cpu")),
+            )
+            train_representations = [
+                rehome_normality_representation(representation, target_device)
+                for representation in train_representations
+            ]
 
         adapter.fit(train_representations, train_samples)
         return runtime_support.merge_distributed_train_summary(
