@@ -65,3 +65,13 @@ def test_basic_evaluator_state_roundtrip_and_merge() -> None:
     assert metrics["image_auroc"] == pytest.approx(1.0)
     assert metrics["pixel_auroc"] == pytest.approx(1.0)
     assert metrics["pixel_aupr"] == pytest.approx(1.0)
+
+
+def test_basic_evaluator_rejects_scalar_anomaly_maps_for_pixel_metrics() -> None:
+    evaluator = BasicADEvaluator()
+
+    with pytest.raises(ValueError, match="anomaly_map"):
+        evaluator.update(
+            {"anomaly_map": torch.tensor(0.9), "image_score": 0.9, "aux_scores": {}},
+            Sample(image=torch.zeros(1, 2, 2), label=1, mask=torch.ones(1, 2, 2)),
+        )

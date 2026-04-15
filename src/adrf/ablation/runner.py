@@ -35,7 +35,14 @@ class AblationRunner:
         matrix_dir = self._create_matrix_dir()
         self.matrix_dir = matrix_dir
         (matrix_dir / "matrix_config_snapshot.yaml").write_text(
-            yaml.safe_dump(self.matrix.config, sort_keys=False),
+            yaml.safe_dump(
+                {
+                    "raw_config": self.matrix.config,
+                    "expanded_specs": valid_specs,
+                    "invalid_combinations": invalid_specs,
+                },
+                sort_keys=False,
+            ),
             encoding="utf-8",
         )
 

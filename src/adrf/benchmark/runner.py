@@ -32,23 +32,14 @@ class BenchmarkRunner:
 
         suite_dir = self._create_suite_dir()
         self.suite_dir = suite_dir
-        (suite_dir / "suite_config_snapshot.yaml").write_text(
-            yaml.safe_dump(
-                {
-                    "name": self.suite.name,
-                    "continue_on_error": self.suite.continue_on_error,
-                    "experiments": [str(path) for path in self.suite.experiments],
-                },
-                sort_keys=False,
-            ),
-            encoding="utf-8",
-        )
 
         records: list[dict[str, Any]] = []
+        resolved_experiments: list[dict[str, Any]] = []
         started_at = datetime.now(timezone.utc).isoformat()
         for experiment_path in self.suite.experiments:
             try:
                 config = load_yaml_config(experiment_path)
+                resolved_experiments.append({"path": str(experiment_path), "config": config})
                 record = self._build_record(experiment_path, config)
                 results, run_dir, _run_info = run_experiment_with_runtime_launch(
                     experiment_path,
@@ -66,6 +57,7 @@ class BenchmarkRunner:
                     "normality": "",
                     "evidence": "",
                 }
+                resolved_experiments.append({"path": str(experiment_path), "error": str(exc)})
                 record["status"] = "failed"
                 record["error"] = str(exc)
                 record["metrics"] = {}
@@ -74,6 +66,19 @@ class BenchmarkRunner:
                     records.append(record)
                     break
             records.append(record)
+
+        (suite_dir / "suite_config_snapshot.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "name": self.suite.name,
+                    "continue_on_error": self.suite.continue_on_error,
+                    "experiments": [str(path) for path in self.suite.experiments],
+                    "resolved_experiments": resolved_experiments,
+                },
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )
 
         suite_results = {
             "suite_name": self.suite.name,

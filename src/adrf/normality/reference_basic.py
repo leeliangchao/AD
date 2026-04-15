@@ -192,7 +192,7 @@ class ReferenceBasicNormality(nn.Module, BaseNormalityModel):
         target_size = tuple(image.shape[-2:])
         reference = sample.reference
         if isinstance(reference, torch.Tensor):
-            was_uint8 = reference.dtype == torch.uint8
+            needs_unit_rescale = not torch.is_floating_point(reference)
             reference_tensor = reference.float()
             if reference_tensor.ndim == 4 and reference_tensor.shape[0] == 1:
                 reference_tensor = reference_tensor.squeeze(0)
@@ -205,8 +205,9 @@ class ReferenceBasicNormality(nn.Module, BaseNormalityModel):
                     interpolation=InterpolationMode.BILINEAR,
                     antialias=True,
                 )
-            if was_uint8 or reference_tensor.max() > 1:
+            if needs_unit_rescale:
                 reference_tensor = reference_tensor / 255.0
+                reference_tensor = self._apply_reference_normalization(sample, reference_tensor)
             return reference_tensor.to(dtype=image.dtype, device=image.device)
 
         if isinstance(reference, Image.Image):
@@ -217,6 +218,19 @@ class ReferenceBasicNormality(nn.Module, BaseNormalityModel):
                 antialias=True,
             )
             reference_tensor = tv_functional.to_tensor(resized)
+            reference_tensor = self._apply_reference_normalization(sample, reference_tensor)
             return reference_tensor.to(dtype=image.dtype, device=image.device)
 
         raise TypeError("ReferenceBasicNormality expects sample.reference to be a PIL image or torch.Tensor.")
+
+    @staticmethod
+    def _apply_reference_normalization(sample: Sample, reference_tensor: torch.Tensor) -> torch.Tensor:
+        """Apply the sample-level normalization policy to a raw reference tensor when available."""
+
+        if not sample.metadata.get("_transform_normalize"):
+            return reference_tensor
+        mean = sample.metadata.get("_transform_mean")
+        std = sample.metadata.get("_transform_std")
+        if not isinstance(mean, list) or not isinstance(std, list):
+            return reference_tensor
+        return tv_functional.normalize(reference_tensor, tuple(float(value) for value in mean), tuple(float(value) for value in std))

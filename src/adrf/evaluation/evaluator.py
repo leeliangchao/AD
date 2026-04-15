@@ -96,7 +96,7 @@ class BasicADEvaluator(Evaluator):
         raise TypeError("Prediction image_score must be a scalar number or single-element tensor/array.")
 
     @staticmethod
-    def _to_map_array(value: Any, *, name: str) -> np.ndarray:
+    def _to_map_array(value: Any, *, name: str, require_2d: bool = False) -> np.ndarray:
         """Convert tensor-like anomaly maps or masks into 2D numpy arrays."""
 
         if isinstance(value, torch.Tensor):
@@ -106,8 +106,12 @@ class BasicADEvaluator(Evaluator):
 
         squeezed = np.squeeze(array)
         if squeezed.ndim == 0:
+            if require_2d:
+                raise ValueError(f"{name} must be a 2D spatial map when pixel metrics are required.")
             return squeezed.reshape(1, 1)
         if squeezed.ndim == 1:
+            if require_2d:
+                raise ValueError(f"{name} must be a 2D spatial map when pixel metrics are required.")
             return squeezed
         if squeezed.ndim == 2:
             return squeezed
@@ -117,7 +121,11 @@ class BasicADEvaluator(Evaluator):
         """Store one prediction/sample pair for later metric computation."""
 
         normalized = normalize_evidence_prediction_input(prediction)
-        raw_anomaly_map = self._to_map_array(normalized.anomaly_map, name="anomaly_map")
+        raw_anomaly_map = self._to_map_array(
+            normalized.anomaly_map,
+            name="anomaly_map",
+            require_2d=sample.mask is not None,
+        )
         image_score = self._to_scalar_score(normalized.image_score)
         image_gt = self._resolve_image_label(sample)
 
