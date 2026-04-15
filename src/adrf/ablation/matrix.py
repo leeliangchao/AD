@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+import hashlib
 from itertools import product
+import json
 from pathlib import Path
 from typing import Any
 
@@ -161,6 +163,7 @@ class AblationMatrix:
                     "evidence": row["evidence"],
                     "protocol": row.get("protocol", protocol_alias),
                     "evaluator": row.get("evaluator", evaluator_alias),
+                    "identity_overrides": deepcopy(row.get("overrides", {})) if isinstance(row.get("overrides", {}), dict) else {},
                     "overrides": self._merge_nested_mappings(matrix_overrides, row.get("overrides", {})),
                 }
             )
@@ -175,9 +178,10 @@ class AblationMatrix:
         evidence_alias = combo["evidence"]
         protocol_alias = combo["protocol"]
         evaluator_alias = combo["evaluator"]
-        group_name = "__".join(
-            [dataset_alias, representation_alias, normality_alias, evidence_alias]
-        )
+        group_name = "__".join([dataset_alias, representation_alias, normality_alias, evidence_alias])
+        identity_suffix = self._identity_suffix(combo.get("identity_overrides", {}))
+        if identity_suffix:
+            group_name = f"{group_name}__cfg{identity_suffix}"
         seed = combo.get("seed")
         experiment_name = f"{group_name}__seed{seed}" if seed is not None else group_name
 
@@ -514,3 +518,12 @@ class AblationMatrix:
             else:
                 merged[key] = deepcopy(value)
         return merged
+
+    @staticmethod
+    def _identity_suffix(identity_overrides: Any) -> str:
+        """Return a short stable fingerprint for row-level identity-changing overrides."""
+
+        if not isinstance(identity_overrides, dict) or not identity_overrides:
+            return ""
+        payload = json.dumps(identity_overrides, sort_keys=True, separators=(",", ":"), default=str)
+        return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:8]

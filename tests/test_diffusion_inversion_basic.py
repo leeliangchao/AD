@@ -70,3 +70,35 @@ def test_diffusion_inversion_fit_and_infer_accept_representation_output() -> Non
     assert artifacts.representation["sample_id"] == "train-000"
     assert DiffusionInversionBasicNormality.accepted_spaces == frozenset({"pixel"})
     assert DiffusionInversionBasicNormality.accepted_tensor_ranks == frozenset({3})
+
+
+def test_diffusion_inversion_infer_is_deterministic_for_the_same_sample() -> None:
+    generator = torch.Generator().manual_seed(0)
+    representations = [
+        make_pixel_output(torch.rand(3, 16, 16, generator=generator), sample_id="train-000")
+    ]
+    model = DiffusionInversionBasicNormality(
+        input_channels=3,
+        hidden_channels=8,
+        time_embed_dim=32,
+        num_train_timesteps=32,
+        learning_rate=1e-3,
+        epochs=1,
+        batch_size=1,
+        noise_level=0.2,
+        num_steps=4,
+        step_size=0.1,
+    )
+
+    model.fit(representations)
+    sample = Sample(image=representations[0].tensor, sample_id="query")
+    first = model.infer(sample, representations[0])
+    second = model.infer(sample, representations[0])
+
+    first_trajectory = torch.stack(first.get_aux("trajectory"))
+    second_trajectory = torch.stack(second.get_aux("trajectory"))
+    first_step_costs = torch.stack(first.get_aux("step_costs"))
+    second_step_costs = torch.stack(second.get_aux("step_costs"))
+
+    assert torch.allclose(first_trajectory, second_trajectory)
+    assert torch.allclose(first_step_costs, second_step_costs)

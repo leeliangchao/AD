@@ -50,7 +50,12 @@ class DiffusersNoisePredictorAdapter(nn.Module):
         loss = functional.mse_loss(predicted_noise, target_noise)
         return loss, target_noise
 
-    def forward_infer_step(self, clean_image: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def forward_infer_step(
+        self,
+        clean_image: torch.Tensor,
+        *,
+        target_noise: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Run one forward inference step and return predicted/target noise."""
 
         max_timestep = self.scheduler.scheduler.config.num_train_timesteps - 1
@@ -60,7 +65,11 @@ class DiffusersNoisePredictorAdapter(nn.Module):
             device=clean_image.device,
             dtype=torch.long,
         )
-        noisy_image, target_noise, timesteps = self._sample_noisy_inputs(clean_image, timesteps=timesteps)
+        noisy_image, target_noise, timesteps = self._sample_noisy_inputs(
+            clean_image,
+            timesteps=timesteps,
+            target_noise=target_noise,
+        )
         predicted_noise = self.model(noisy_image, timesteps)
         return predicted_noise, target_noise
 
@@ -69,11 +78,13 @@ class DiffusersNoisePredictorAdapter(nn.Module):
         clean_batch: torch.Tensor,
         *,
         timesteps: torch.Tensor | None = None,
+        target_noise: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Sample Gaussian noise and DDPM timesteps for the input batch."""
 
         batch_size = clean_batch.shape[0]
-        target_noise = torch.randn_like(clean_batch)
+        if target_noise is None:
+            target_noise = torch.randn_like(clean_batch)
         raw_timesteps = timesteps
         if raw_timesteps is None:
             raw_timesteps = torch.randint(

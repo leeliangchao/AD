@@ -81,6 +81,36 @@ def test_reference_diffusion_basic_fit_and_infer_accept_representation_output() 
     assert ReferenceDiffusionBasicNormality.accepted_tensor_ranks == frozenset({3})
 
 
+def test_reference_diffusion_infer_is_deterministic_for_the_same_sample() -> None:
+    generator = torch.Generator().manual_seed(0)
+    samples = [
+        Sample(
+            image=torch.rand(3, 16, 16, generator=generator),
+            reference=torch.rand(3, 16, 16, generator=generator),
+            sample_id="sample-001",
+        )
+    ]
+    representations = [make_pixel_output(samples[0].image, sample_id=samples[0].sample_id or "sample")]
+    model = ReferenceDiffusionBasicNormality(
+        input_channels=3,
+        hidden_channels=8,
+        time_embed_dim=32,
+        num_train_timesteps=32,
+        learning_rate=1e-3,
+        epochs=1,
+        batch_size=1,
+        noise_level=0.2,
+    )
+
+    model.fit(representations, samples)
+    first = model.infer(samples[0], representations[0])
+    second = model.infer(samples[0], representations[0])
+
+    assert torch.allclose(first.get_aux("predicted_noise"), second.get_aux("predicted_noise"))
+    assert torch.allclose(first.get_aux("target_noise"), second.get_aux("target_noise"))
+    assert torch.allclose(first.get_primary("reference_projection"), second.get_primary("reference_projection"))
+
+
 def test_reference_diffusion_basic_accepts_pil_reference_fallback() -> None:
     """ReferenceDiffusionBasicNormality should keep working with raw PIL references."""
 

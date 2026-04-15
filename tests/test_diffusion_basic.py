@@ -62,3 +62,28 @@ def test_diffusion_basic_fit_and_infer_accept_representation_output() -> None:
     assert artifacts.representation["provenance"]["representation_name"] == "pixel"
     assert DiffusionBasicNormality.accepted_spaces == frozenset({"pixel"})
     assert DiffusionBasicNormality.accepted_tensor_ranks == frozenset({3})
+
+
+def test_diffusion_basic_infer_is_deterministic_for_the_same_sample() -> None:
+    generator = torch.Generator().manual_seed(0)
+    representations = [
+        make_pixel_output(torch.rand(3, 16, 16, generator=generator), sample_id="train-000")
+    ]
+    model = DiffusionBasicNormality(
+        input_channels=3,
+        hidden_channels=8,
+        time_embed_dim=32,
+        num_train_timesteps=32,
+        learning_rate=1e-3,
+        epochs=1,
+        batch_size=1,
+        noise_level=0.2,
+    )
+
+    model.fit(representations)
+    sample = Sample(image=representations[0].tensor, sample_id="query")
+    first = model.infer(sample, representations[0])
+    second = model.infer(sample, representations[0])
+
+    assert torch.allclose(first.get_aux("predicted_noise"), second.get_aux("predicted_noise"))
+    assert torch.allclose(first.get_aux("target_noise"), second.get_aux("target_noise"))
