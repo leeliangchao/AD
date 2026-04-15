@@ -231,13 +231,18 @@ def _metric_value(metric: Any, key: str) -> float | str:
 def _build_category_mean_records(aggregated_records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Collapse per-dataset aggregated records into one category-mean row per method."""
 
-    grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    grouped: dict[tuple[str, str, str, str], list[dict[str, Any]]] = {}
     for record in aggregated_records:
-        key = (str(record.get("normality", "")), str(record.get("evidence", "")))
+        key = (
+            str(record.get("normality", "")),
+            str(record.get("evidence", "")),
+            str(record.get("representation", "")),
+            str(_budget_value(record.get("budget"), "backend")),
+        )
         grouped.setdefault(key, []).append(record)
 
     category_mean_records: list[dict[str, Any]] = []
-    for (_normality, _evidence), records in sorted(grouped.items()):
+    for (_normality, _evidence, _representation, _backend), records in sorted(grouped.items()):
         first = records[0]
         metrics = _aggregate_metrics_across_records(records)
         category_mean_records.append(

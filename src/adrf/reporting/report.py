@@ -80,6 +80,8 @@ def find_latest_run_dir(base_dir: str | Path = "outputs/runs") -> Path:
 def _load_json(path: Path) -> dict[str, Any]:
     """Load a JSON file into a dictionary."""
 
+    if not path.exists():
+        return {}
     return json.loads(path.read_text(encoding="utf-8"))
 
 

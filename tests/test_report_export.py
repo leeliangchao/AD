@@ -26,6 +26,26 @@ def test_export_experiment_report_writes_markdown(tmp_path: Path) -> None:
     assert "image_auroc" in report_text
 
 
+def test_export_experiment_report_gracefully_handles_missing_metrics_file(tmp_path: Path) -> None:
+    run_dir = tmp_path / "runs" / "demo_partial"
+    run_dir.mkdir(parents=True)
+    (run_dir / "run_info.json").write_text(
+        json.dumps({"run_name": "demo_partial", "status": "failed"}),
+        encoding="utf-8",
+    )
+    (run_dir / "config_snapshot.yaml").write_text(
+        "normality:\n  name: autoencoder\n",
+        encoding="utf-8",
+    )
+
+    report_path = export_experiment_report(run_dir)
+
+    assert report_path.exists()
+    report_text = report_path.read_text(encoding="utf-8")
+    assert "demo_partial" in report_text
+    assert "failed" in report_text
+
+
 def test_write_benchmark_summary_creates_markdown_and_csv(tmp_path: Path) -> None:
     """Benchmark summary export should create markdown, CSV, and JSON assets."""
 

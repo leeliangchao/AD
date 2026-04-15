@@ -78,3 +78,27 @@ def test_benchmark_and_report_scripts_execute() -> None:
     summary_payload = json.loads(summary_result.stdout)
     assert summary_payload["markdown"].endswith("benchmark_summary.md")
 
+
+def test_benchmark_runner_reports_invalid_experiment_config_cleanly(tmp_path: Path) -> None:
+    suite_path = tmp_path / "tiny_suite.yaml"
+    invalid_experiment = tmp_path / "invalid_experiment.yaml"
+    invalid_experiment.write_text(
+        "- not-a-mapping\n",
+        encoding="utf-8",
+    )
+    suite_path.write_text(
+        "\n".join(
+            [
+                "name: invalid_suite",
+                "continue_on_error: true",
+                f"experiments:\n  - {invalid_experiment}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    results = BenchmarkRunner(suite_path, output_root=tmp_path / "outputs").run()
+
+    record = results["experiments"][0]
+    assert record["status"] == "failed"
+    assert "must load to a mapping" in record["error"]

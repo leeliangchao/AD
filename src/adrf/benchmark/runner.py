@@ -12,6 +12,7 @@ import yaml
 from adrf.benchmark.suite import BenchmarkSuite
 from adrf.runner.launching import run_experiment_with_runtime_launch
 from adrf.reporting.summary import write_benchmark_summary
+from adrf.utils.config import load_yaml_config
 
 
 class BenchmarkRunner:
@@ -46,9 +47,9 @@ class BenchmarkRunner:
         records: list[dict[str, Any]] = []
         started_at = datetime.now(timezone.utc).isoformat()
         for experiment_path in self.suite.experiments:
-            config = yaml.safe_load(Path(experiment_path).read_text(encoding="utf-8"))
-            record = self._build_record(experiment_path, config)
             try:
+                config = load_yaml_config(experiment_path)
+                record = self._build_record(experiment_path, config)
                 results, run_dir, _run_info = run_experiment_with_runtime_launch(
                     experiment_path,
                     output_root=self.output_root / "runs",
@@ -57,6 +58,14 @@ class BenchmarkRunner:
                 record["metrics"] = dict(results.get("evaluation", {}))
                 record["run_path"] = str(run_dir) if run_dir is not None else ""
             except Exception as exc:
+                record = {
+                    "experiment_name": experiment_path.stem,
+                    "config_path": str(experiment_path),
+                    "dataset": "",
+                    "representation": "",
+                    "normality": "",
+                    "evidence": "",
+                }
                 record["status"] = "failed"
                 record["error"] = str(exc)
                 record["metrics"] = {}
