@@ -237,7 +237,6 @@ class ReferenceDiffusionBasicNormality(nn.Module, BaseNormalityModel):
             capabilities={
                 "predicted_noise",
                 "target_noise",
-                "reconstruction",
                 "reference_projection",
                 "conditional_alignment",
             },

@@ -22,7 +22,7 @@ class PathCostEvidence(BaseEvidenceModel):
         del sample
         raw_step_updates = artifacts.get_aux("step_updates")
         if isinstance(raw_step_updates, list) and raw_step_updates:
-            step_cost_maps = [self._normalize_step_cost(update) for update in raw_step_updates]
+            step_cost_maps = [self._normalize_step_update(update) for update in raw_step_updates]
         else:
             if not artifacts.has("step_costs"):
                 raise KeyError("Missing required capabilities: step_costs")
@@ -50,3 +50,17 @@ class PathCostEvidence(BaseEvidenceModel):
         if step_cost.ndim == 3:
             return step_cost.float().mean(dim=0)
         raise ValueError("Step cost tensors must be 2D or 3D.")
+
+    @staticmethod
+    def _normalize_step_update(step_update: torch.Tensor) -> torch.Tensor:
+        """Convert a signed step update tensor into a nonnegative 2D cost map."""
+
+        if not isinstance(step_update, torch.Tensor):
+            raise TypeError("Each step update must be a torch.Tensor.")
+        if step_update.ndim == 2:
+            return step_update.abs().float()
+        if step_update.ndim == 3 and step_update.shape[0] == 1:
+            return step_update.squeeze(0).abs().float()
+        if step_update.ndim == 3:
+            return step_update.abs().float().mean(dim=0)
+        raise ValueError("Step update tensors must be 2D or 3D.")

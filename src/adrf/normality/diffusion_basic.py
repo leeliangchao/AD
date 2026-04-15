@@ -303,7 +303,7 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
                 "num_train_timesteps": self.num_train_timesteps,
                 "inference_timestep": inference_timestep,
             },
-            capabilities={"predicted_noise", "target_noise", "reconstruction"},
+            capabilities={"predicted_noise", "target_noise"},
         )
 
     def _sample_noisy_inputs(

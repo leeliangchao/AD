@@ -49,10 +49,8 @@ def test_diffusion_inversion_fit_and_infer_accept_representation_output() -> Non
     sample = Sample(image=representations[0].tensor, sample_id="query")
     artifacts = model.infer(sample, representations[0])
 
-    assert artifacts.has("reconstruction")
     assert artifacts.has("trajectory")
     assert artifacts.has("step_costs")
-    assert artifacts.has("step_updates")
     assert "anomaly_map" not in artifacts.primary
     assert "image_score" not in artifacts.primary
 

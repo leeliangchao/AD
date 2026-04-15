@@ -136,7 +136,7 @@ class DiffusionInversionBasicNormality(DiffusionBasicNormality):
                     "last_step_cost_mean": float(step_costs[-1].mean().item()),
                 },
             },
-            capabilities={"reconstruction", "trajectory", "step_updates", "step_costs"},
+            capabilities={"trajectory", "step_costs"},
         )
 
     def _initial_state(self, representation: RepresentationOutput, *, identity: object | None = None) -> torch.Tensor:

@@ -49,7 +49,6 @@ def test_diffusion_basic_fit_and_infer_accept_representation_output() -> None:
 
     assert artifacts.has("predicted_noise")
     assert artifacts.has("target_noise")
-    assert artifacts.has("reconstruction")
     assert "anomaly_map" not in artifacts.primary
     predicted_noise = artifacts.get_aux("predicted_noise")
     target_noise = artifacts.get_aux("target_noise")

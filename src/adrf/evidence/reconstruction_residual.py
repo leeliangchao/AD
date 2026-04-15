@@ -29,8 +29,12 @@ class ReconstructionResidualEvidence(BaseEvidenceModel):
     def _resolve_reconstruction(artifacts: NormalityArtifacts) -> torch.Tensor:
         """Read reconstruction-like content from artifacts with fallback behavior."""
 
-        if artifacts.has("reconstruction"):
+        if "reconstruction" in artifacts.primary:
             reconstruction = artifacts.get_primary("reconstruction")
+        elif artifacts.has("reconstruction"):
+            reconstruction = artifacts.get_primary("reconstruction")
+        elif "projection" in artifacts.primary:
+            reconstruction = artifacts.get_primary("projection")
         elif artifacts.has("projection"):
             reconstruction = artifacts.get_primary("projection")
         else:
@@ -39,4 +43,3 @@ class ReconstructionResidualEvidence(BaseEvidenceModel):
         if not isinstance(reconstruction, torch.Tensor):
             raise TypeError("ReconstructionResidualEvidence expects tensor-valued reconstruction artifacts.")
         return reconstruction
-

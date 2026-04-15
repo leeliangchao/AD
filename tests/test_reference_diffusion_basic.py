@@ -57,7 +57,6 @@ def test_reference_diffusion_basic_fit_and_infer_accept_representation_output() 
 
     assert artifacts.has("predicted_noise")
     assert artifacts.has("target_noise")
-    assert artifacts.has("reconstruction")
     assert artifacts.has("reference_projection")
     assert artifacts.has("conditional_alignment")
     assert "anomaly_map" not in artifacts.primary
