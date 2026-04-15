@@ -11,6 +11,8 @@ import torch.nn.functional as functional
 
 from adrf.core.interfaces import Evaluator
 from adrf.core.sample import Sample
+from adrf.evaluation.state import ADEvaluatorState
+from adrf.evidence.prediction import normalize_evidence_prediction_input
 from adrf.evaluation.metrics import compute_image_auroc, compute_pixel_aupr, compute_pixel_auroc
 
 
@@ -43,38 +45,28 @@ class BasicADEvaluator(Evaluator):
     def state_dict(self) -> dict[str, Any]:
         """Serialize the accumulated evaluator state for cross-rank aggregation."""
 
-        return {
-            "image_labels": list(self.image_labels),
-            "image_scores": list(self.image_scores),
-            "pixel_masks": [mask.copy() for mask in self.pixel_masks],
-            "pixel_maps": [anomaly_map.copy() for anomaly_map in self.pixel_maps],
-        }
+        return ADEvaluatorState(
+            image_labels=list(self.image_labels),
+            image_scores=list(self.image_scores),
+            pixel_masks=[mask.copy() for mask in self.pixel_masks],
+            pixel_maps=[anomaly_map.copy() for anomaly_map in self.pixel_maps],
+        ).to_dict()
 
     def load_state_dict(self, state: Mapping[str, Any]) -> None:
         """Restore the evaluator state from a serialized payload."""
 
+        normalized = ADEvaluatorState.from_mapping(state)
         self.reset()
-        self.image_labels = [int(value) for value in state.get("image_labels", [])]
-        self.image_scores = [float(value) for value in state.get("image_scores", [])]
-        self.pixel_masks = [np.asarray(mask) for mask in state.get("pixel_masks", [])]
-        self.pixel_maps = [np.asarray(anomaly_map) for anomaly_map in state.get("pixel_maps", [])]
+        self.image_labels = normalized.image_labels
+        self.image_scores = normalized.image_scores
+        self.pixel_masks = normalized.pixel_masks
+        self.pixel_maps = normalized.pixel_maps
 
     @classmethod
     def merge_states(cls, states: list[Mapping[str, Any]]) -> dict[str, Any]:
         """Merge multiple evaluator state payloads into one combined state."""
 
-        merged = {
-            "image_labels": [],
-            "image_scores": [],
-            "pixel_masks": [],
-            "pixel_maps": [],
-        }
-        for state in states:
-            merged["image_labels"].extend(int(value) for value in state.get("image_labels", []))
-            merged["image_scores"].extend(float(value) for value in state.get("image_scores", []))
-            merged["pixel_masks"].extend(np.asarray(mask) for mask in state.get("pixel_masks", []))
-            merged["pixel_maps"].extend(np.asarray(anomaly_map) for anomaly_map in state.get("pixel_maps", []))
-        return merged
+        return ADEvaluatorState.merge(states).to_dict()
 
     @staticmethod
     def _resolve_image_label(sample: Sample) -> int:
@@ -124,11 +116,9 @@ class BasicADEvaluator(Evaluator):
     def update(self, prediction: Mapping[str, Any], sample: Sample) -> None:
         """Store one prediction/sample pair for later metric computation."""
 
-        if "anomaly_map" not in prediction or "image_score" not in prediction:
-            raise KeyError("Prediction must contain 'anomaly_map' and 'image_score'.")
-
-        raw_anomaly_map = self._to_map_array(prediction["anomaly_map"], name="anomaly_map")
-        image_score = self._to_scalar_score(prediction["image_score"])
+        normalized = normalize_evidence_prediction_input(prediction)
+        raw_anomaly_map = self._to_map_array(normalized.anomaly_map, name="anomaly_map")
+        image_score = self._to_scalar_score(normalized.image_score)
         image_gt = self._resolve_image_label(sample)
 
         if sample.mask is not None:
