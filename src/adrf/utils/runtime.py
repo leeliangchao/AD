@@ -13,6 +13,8 @@ from torch import nn
 from torch.nn.parallel import DistributedDataParallel
 
 from adrf.core.sample import Sample
+from adrf.normality.runtime import resolve_normality_runtime_spec
+from adrf.normality.state import NormalityRuntimeState, install_normality_runtime_state
 from adrf.utils.config import load_yaml_config
 from adrf.utils.distributed import DistributedRuntimeContext
 
@@ -188,13 +190,17 @@ def configure_trainable_runtime(
         model.to(device)
     setattr(model, "runtime_device", device)
     effective_amp = bool(amp_enabled and device.type == "cuda")
-    setattr(model, "amp_enabled", effective_amp)
-    setattr(model, "grad_scaler", torch.amp.GradScaler("cuda", enabled=effective_amp))
-    setattr(model, "distributed_context", context)
     distributed_training_enabled = False
     if context.enabled and context.world_size > 1:
         distributed_training_enabled = _wrap_trainable_modules_for_distributed(model, device, context)
-    setattr(model, "distributed_training_enabled", distributed_training_enabled)
+    runtime_state = NormalityRuntimeState(
+        device=device,
+        amp_enabled=effective_amp,
+        grad_scaler=torch.amp.GradScaler("cuda", enabled=effective_amp),
+        distributed_context=context,
+        distributed_training_enabled=distributed_training_enabled,
+    )
+    install_normality_runtime_state(model, runtime_state)
     if effective_amp or device.type != "cpu" or distributed_training_enabled:
         _wrap_fit_for_runtime(model)
 
@@ -330,13 +336,18 @@ def _wrap_fit_for_runtime(model: object) -> None:
     if getattr(model, "_adrf_runtime_wrapped", False):
         return
 
-    if hasattr(model, "encoder") and hasattr(model, "decoder") and hasattr(model, "_forward_impl"):
+    runtime_spec = resolve_normality_runtime_spec(model)
+    if runtime_spec is None:
+        setattr(model, "_adrf_runtime_wrapped", True)
+        return
+
+    if runtime_spec.fit_wrapper_id == "autoencoder":
         model.fit = _make_autoencoder_fit(model)  # type: ignore[method-assign]
-    elif hasattr(model, "conditional_denoiser") and hasattr(model, "_prepare_reference_tensor"):
+    elif runtime_spec.fit_wrapper_id == "reference_diffusion":
         model.fit = _make_reference_diffusion_fit(model)  # type: ignore[method-assign]
-    elif hasattr(model, "conditional_model") and hasattr(model, "_prepare_reference_tensor"):
+    elif runtime_spec.fit_wrapper_id == "reference_basic":
         model.fit = _make_reference_basic_fit(model)  # type: ignore[method-assign]
-    elif hasattr(model, "denoiser") and hasattr(model, "_sample_noisy_inputs"):
+    elif runtime_spec.fit_wrapper_id == "diffusion":
         model.fit = _make_diffusion_fit(model)  # type: ignore[method-assign]
 
     setattr(model, "_adrf_runtime_wrapped", True)
@@ -370,15 +381,10 @@ def _wrap_trainable_modules_for_distributed(
 def _distributed_trainable_module_names(model: object) -> tuple[str, ...]:
     """Return the trainable submodules that should be wrapped for DDP."""
 
-    if hasattr(model, "encoder") and hasattr(model, "decoder"):
-        return ("encoder", "decoder")
-    if hasattr(model, "conditional_denoiser"):
-        return ("conditional_denoiser",)
-    if hasattr(model, "conditional_model"):
-        return ("conditional_model",)
-    if hasattr(model, "denoiser"):
-        return ("denoiser",)
-    return ()
+    runtime_spec = resolve_normality_runtime_spec(model)
+    if runtime_spec is None:
+        return ()
+    return runtime_spec.distributed_module_names
 
 
 def _wrap_module_for_distributed(
@@ -401,7 +407,7 @@ def _wrap_module_for_distributed(
 def _wrap_diffusers_adapter_for_distributed(model: Any) -> None:
     """Wrap a lazily-instantiated diffusers adapter model when distributed is enabled."""
 
-    distributed_context = getattr(model, "distributed_context", DistributedRuntimeContext())
+    distributed_context = _runtime_state(model).distributed_context
     if not distributed_context.enabled or distributed_context.world_size <= 1:
         return
     adapter = getattr(model, "diffusers_adapter", None)
@@ -411,7 +417,7 @@ def _wrap_diffusers_adapter_for_distributed(model: Any) -> None:
         return
     adapter.model = _wrap_module_for_distributed(
         adapter.model,
-        getattr(model, "runtime_device", torch.device("cpu")),
+        _runtime_state(model).device,
         distributed_context,
     )
 
@@ -419,9 +425,8 @@ def _wrap_diffusers_adapter_for_distributed(model: Any) -> None:
 def _autocast_context(model: object):
     """Return the correct autocast context for the model runtime."""
 
-    runtime_device = getattr(model, "runtime_device", torch.device("cpu"))
-    amp_enabled = bool(getattr(model, "amp_enabled", False))
-    if amp_enabled and runtime_device.type == "cuda":
+    runtime_state = _runtime_state(model)
+    if runtime_state.amp_enabled and runtime_state.device.type == "cuda":
         return torch.autocast(device_type="cuda", dtype=torch.float16)
     return nullcontext()
 
@@ -429,7 +434,7 @@ def _autocast_context(model: object):
 def _optimizer_step(model: object, optimizer: torch.optim.Optimizer, loss: torch.Tensor) -> None:
     """Run one optimizer step with or without GradScaler."""
 
-    scaler = getattr(model, "grad_scaler", None)
+    scaler = _runtime_state(model).grad_scaler
     optimizer.zero_grad()
     if scaler is not None and scaler.is_enabled():
         scaler.scale(loss).backward()
@@ -466,6 +471,22 @@ def _make_autoencoder_fit(model: Any):
         model.eval()
 
     return fit
+
+
+def _runtime_state(model: object) -> NormalityRuntimeState:
+    """Return one explicit runtime state, falling back to legacy attributes when needed."""
+
+    runtime = getattr(model, "runtime", None)
+    if isinstance(runtime, NormalityRuntimeState):
+        return runtime
+
+    return NormalityRuntimeState(
+        device=getattr(model, "runtime_device", torch.device("cpu")),
+        amp_enabled=bool(getattr(model, "amp_enabled", False)),
+        grad_scaler=getattr(model, "grad_scaler", torch.amp.GradScaler("cuda", enabled=False)),
+        distributed_context=getattr(model, "distributed_context", DistributedRuntimeContext()),
+        distributed_training_enabled=bool(getattr(model, "distributed_training_enabled", False)),
+    )
 
 
 def _make_diffusion_fit(model: Any):

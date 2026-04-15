@@ -14,6 +14,7 @@ from adrf.core.artifacts import NormalityArtifacts
 from adrf.core.sample import Sample
 from adrf.normality.diffusion_basic import _normalize_channel_mults
 from adrf.normality.base import BaseNormalityModel
+from adrf.normality.state import install_normality_runtime_state, make_default_normality_runtime_state
 from adrf.representation.contracts import RepresentationOutput
 
 
@@ -99,6 +100,7 @@ class AutoEncoderNormality(nn.Module, BaseNormalityModel):
         decoder_layers.append(nn.Conv2d(current_channels, input_channels, kernel_size=3, padding=1))
         self.decoder = nn.Sequential(*decoder_layers)
         self.last_fit_loss: float | None = None
+        install_normality_runtime_state(self, make_default_normality_runtime_state())
         self.eval()
 
     def fit(

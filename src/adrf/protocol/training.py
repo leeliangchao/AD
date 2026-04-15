@@ -3,6 +3,11 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections import defaultdict
 
+from adrf.normality.training import (
+    JointNormalityTrainingAdapter,
+    OfflineNormalityTrainingAdapter,
+    resolve_normality_training_adapter,
+)
 from adrf.protocol.context import ProtocolContext
 from adrf.protocol.results import TrainSummary
 from adrf.protocol import runtime_support
@@ -17,6 +22,10 @@ class TrainingStrategy(ABC):
 
 class OfflineTrainingStrategy(TrainingStrategy):
     def train(self, context: ProtocolContext) -> TrainSummary:
+        adapter = resolve_normality_training_adapter(context.normality)
+        if not isinstance(adapter, OfflineNormalityTrainingAdapter):
+            raise RuntimeError(f"{type(context.normality).__name__} does not support offline training.")
+
         train_samples = []
         train_representations = []
         num_batches = 0
@@ -48,7 +57,7 @@ class OfflineTrainingStrategy(TrainingStrategy):
                 train_samples.extend(payload.get("samples", []))
                 train_representations.extend(payload.get("representations", []))
 
-        context.normality.fit(train_representations, train_samples)
+        adapter.fit(train_representations, train_samples)
         return runtime_support.merge_distributed_train_summary(
             TrainSummary(
                 num_train_batches=num_batches,
@@ -60,7 +69,11 @@ class OfflineTrainingStrategy(TrainingStrategy):
 
 class JointTrainingStrategy(TrainingStrategy):
     def train(self, context: ProtocolContext) -> TrainSummary:
-        context.normality.configure_joint_training(context.representation_model)
+        adapter = resolve_normality_training_adapter(context.normality)
+        if not isinstance(adapter, JointNormalityTrainingAdapter):
+            raise RuntimeError(f"{type(context.normality).__name__} does not support joint training.")
+
+        adapter.configure_joint_training(context.representation_model)
 
         num_batches = 0
         num_train_samples = 0
@@ -71,7 +84,7 @@ class JointTrainingStrategy(TrainingStrategy):
             num_batches += 1
             num_train_samples += len(batch)
             batch_representations = context.representation.encode_batch(batch)
-            batch_metrics = context.normality.fit_batch(batch_representations, batch)
+            batch_metrics = adapter.fit_batch(batch_representations, batch)
             for key, value in batch_metrics.items():
                 if isinstance(value, (int, float)):
                     metric_key = str(key)
@@ -94,9 +107,9 @@ class JointTrainingStrategy(TrainingStrategy):
 
 
 def resolve_training_strategy(context: ProtocolContext) -> TrainingStrategy:
-    fit_mode = str(getattr(context.normality, "fit_mode", "offline"))
-    if fit_mode == "offline":
+    adapter = resolve_normality_training_adapter(context.normality)
+    if isinstance(adapter, OfflineNormalityTrainingAdapter):
         return OfflineTrainingStrategy()
-    if fit_mode == "joint":
+    if isinstance(adapter, JointNormalityTrainingAdapter):
         return JointTrainingStrategy()
-    raise ValueError(f"Unsupported normality fit mode: {fit_mode}")
+    raise ValueError(f"Unsupported normality fit mode: {getattr(context.normality, 'fit_mode', None)}")

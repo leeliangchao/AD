@@ -33,6 +33,7 @@ from adrf.normality.diffusion_inversion_basic import DiffusionInversionBasicNorm
 from adrf.normality.feature_memory import FeatureMemoryNormality
 from adrf.normality.reference_basic import ReferenceBasicNormality
 from adrf.normality.reference_diffusion_basic import ReferenceDiffusionBasicNormality
+from adrf.normality.training import validate_normality_representation_contract
 from adrf.protocol.one_class import OneClassProtocol
 from adrf.registry.registry import Registry
 from adrf.reporting.report import export_experiment_report
@@ -180,34 +181,8 @@ class ExperimentRunner:
         if self.representation is None or self.normality is None:
             raise RuntimeError("Representation and normality must be instantiated before contract validation.")
 
-        representation_space = getattr(self.representation, "space", None)
-        accepted_spaces = getattr(self.normality, "accepted_spaces", frozenset())
-        if accepted_spaces and representation_space not in accepted_spaces:
-            accepted = ", ".join(f"`{candidate}`" for candidate in sorted(accepted_spaces))
-            raise ValueError(
-                f"{type(self.normality).__name__} requires representation space {accepted}; "
-                f"got `{representation_space}` from {type(getattr(self.representation, 'representation', self.representation)).__name__}."
-            )
-
         probe_output = self._probe_representation_contract_output()
-        accepted_tensor_ranks = getattr(self.normality, "accepted_tensor_ranks", frozenset())
-        if accepted_tensor_ranks and probe_output.tensor.ndim not in accepted_tensor_ranks:
-            accepted = ", ".join(str(rank) for rank in sorted(accepted_tensor_ranks))
-            raise ValueError(
-                f"{type(self.normality).__name__} requires representation tensor rank in {{{accepted}}}; "
-                f"got {probe_output.tensor.ndim} from {type(getattr(self.representation, 'representation', self.representation)).__name__}."
-            )
-
-        fit_mode = str(getattr(self.normality, "fit_mode", "offline"))
-        if (
-            fit_mode == "offline"
-            and bool(getattr(self.normality, "requires_detached_representation", False))
-            and probe_output.requires_grad
-        ):
-            raise ValueError(
-                f"{type(self.normality).__name__} requires detached representations for offline fit mode, "
-                f"but {type(getattr(self.representation, 'representation', self.representation)).__name__} emits a trainable representation."
-            )
+        validate_normality_representation_contract(self.normality, self.representation, probe_output)
 
     def _probe_representation_contract_output(self) -> Any:
         """Inspect one representation output without mutating representation training state."""

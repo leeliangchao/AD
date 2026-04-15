@@ -1,16 +1,27 @@
 """Tests for the minimal diffusion-style normality model."""
 
+from collections.abc import Iterable
 from pathlib import Path
 import sys
+from typing import get_type_hints
 
 import torch
 
 from adrf.core.sample import Sample
 from adrf.normality.diffusion_basic import DiffusionBasicNormality
+from adrf.representation.contracts import RepresentationOutput
 
 sys.path.insert(0, str(Path(__file__).parent))
 
 from support.representation_builders import make_pixel_output
+
+
+def test_diffusion_basic_public_annotations_expose_representation_output_only() -> None:
+    fit_hints = get_type_hints(DiffusionBasicNormality.fit)
+    infer_hints = get_type_hints(DiffusionBasicNormality.infer)
+
+    assert fit_hints["representations"] == Iterable[RepresentationOutput]
+    assert infer_hints["representation"] is RepresentationOutput
 
 
 def test_diffusion_basic_fit_and_infer_accept_representation_output() -> None:

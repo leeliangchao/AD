@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 from contextlib import nullcontext
 import math
 from typing import Sequence
@@ -16,7 +16,9 @@ from adrf.core.artifacts import NormalityArtifacts
 from adrf.core.sample import Sample
 from adrf.diffusion.adapters import DiffusersNoisePredictorAdapter
 from adrf.normality.base import BaseNormalityModel
+from adrf.normality.state import NormalityRuntimeState, install_normality_runtime_state
 from adrf.representation.contracts import RepresentationOutput
+from adrf.utils.distributed import DistributedRuntimeContext
 
 
 def _normalize_channel_mults(
@@ -232,15 +234,22 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
         self.diffusers_adapter: DiffusersNoisePredictorAdapter | None = None
         self.input_channels = input_channels
         self.last_fit_loss: float | None = None
-        self.runtime_device = torch.device("cpu")
-        self.amp_enabled = False
-        self.grad_scaler = torch.amp.GradScaler("cuda", enabled=False)
+        install_normality_runtime_state(
+            self,
+            NormalityRuntimeState(
+            device=torch.device("cpu"),
+            amp_enabled=False,
+            grad_scaler=torch.amp.GradScaler("cuda", enabled=False),
+            distributed_context=DistributedRuntimeContext(),
+            distributed_training_enabled=False,
+            ),
+        )
         self._adrf_runtime_wrapped = True
         self.eval()
 
     def fit(
         self,
-        representations: Iterable[RepresentationOutput | Mapping[str, Any]],
+        representations: Iterable[RepresentationOutput],
         samples: Iterable[Sample] | None = None,
     ) -> None:
         """Train the denoiser on normal pixel-space representations."""
@@ -265,7 +274,7 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
                 clean_batch = shuffled[start : start + self.batch_size]
                 autocast_context = (
                     torch.autocast(device_type="cuda", dtype=torch.float16)
-                    if self.amp_enabled and self.runtime_device.type == "cuda"
+                    if self.runtime.amp_enabled and self.runtime.device.type == "cuda"
                     else nullcontext()
                 )
                 with autocast_context:
@@ -276,10 +285,10 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
                         predicted_noise = self.denoiser(noisy_batch, timesteps, noise_scales)
                         loss = functional.mse_loss(predicted_noise, target_noise)
                 optimizer.zero_grad()
-                if self.grad_scaler.is_enabled():
-                    self.grad_scaler.scale(loss).backward()
-                    self.grad_scaler.step(optimizer)
-                    self.grad_scaler.update()
+                if self.runtime.grad_scaler.is_enabled():
+                    self.runtime.grad_scaler.scale(loss).backward()
+                    self.runtime.grad_scaler.step(optimizer)
+                    self.runtime.grad_scaler.update()
                 else:
                     loss.backward()
                     optimizer.step()
@@ -289,7 +298,7 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
     def infer(
         self,
         sample: Sample,
-        representation: RepresentationOutput | Mapping[str, Any],
+        representation: RepresentationOutput,
     ) -> NormalityArtifacts:
         """Run one single-step noise-prediction pass and emit diffusion artifacts."""
 
@@ -382,6 +391,8 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
             noise_level=self.noise_level,
             sample_size=sample_size,
         )
-        self.diffusers_adapter.to(self.runtime_device)
-        self.diffusers_adapter.amp_enabled = self.amp_enabled
-        self.diffusers_adapter.grad_scaler = self.grad_scaler
+        self.diffusers_adapter.to(self.runtime.device)
+        self.diffusers_adapter.runtime = self.runtime
+        self.diffusers_adapter.runtime_device = self.runtime.device
+        self.diffusers_adapter.amp_enabled = self.runtime.amp_enabled
+        self.diffusers_adapter.grad_scaler = self.runtime.grad_scaler

@@ -11,6 +11,8 @@ from torch import nn
 
 from adrf.diffusion.models import DiffusersUNetAdapter, make_unet_model
 from adrf.diffusion.schedulers import DiffusersSchedulerAdapter, make_scheduler
+from adrf.normality.state import NormalityRuntimeState
+from adrf.utils.distributed import DistributedRuntimeContext
 
 
 class DiffusersNoisePredictorAdapter(nn.Module):
@@ -38,9 +40,16 @@ class DiffusersNoisePredictorAdapter(nn.Module):
                 "norm_num_groups": 4,
             }
         )
-        self.runtime_device = torch.device("cpu")
-        self.amp_enabled = False
-        self.grad_scaler = torch.amp.GradScaler("cuda", enabled=False)
+        self.runtime = NormalityRuntimeState(
+            device=torch.device("cpu"),
+            amp_enabled=False,
+            grad_scaler=torch.amp.GradScaler("cuda", enabled=False),
+            distributed_context=DistributedRuntimeContext(),
+            distributed_training_enabled=False,
+        )
+        self.runtime_device = self.runtime.device
+        self.amp_enabled = self.runtime.amp_enabled
+        self.grad_scaler = self.runtime.grad_scaler
 
     def forward_train_step(self, clean_batch: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """Run one forward noise-prediction step for training."""

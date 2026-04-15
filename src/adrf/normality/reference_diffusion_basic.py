@@ -20,6 +20,7 @@ from adrf.normality.diffusion_basic import (
     _sinusoidal_timestep_embedding,
 )
 from adrf.normality.base import BaseNormalityModel
+from adrf.normality.state import install_normality_runtime_state, make_default_normality_runtime_state
 from adrf.representation.contracts import RepresentationOutput
 
 
@@ -130,6 +131,7 @@ class ReferenceDiffusionBasicNormality(nn.Module, BaseNormalityModel):
             time_embed_dim=self.time_embed_dim,
         )
         self.last_fit_loss: float | None = None
+        install_normality_runtime_state(self, make_default_normality_runtime_state())
         self.eval()
 
     def fit(
