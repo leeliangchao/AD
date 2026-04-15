@@ -55,7 +55,7 @@ class DiffusersNoisePredictorAdapter(nn.Module):
         clean_image: torch.Tensor,
         *,
         target_noise: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Run one forward inference step and return predicted/target noise."""
 
         max_timestep = self.scheduler.scheduler.config.num_train_timesteps - 1
@@ -71,7 +71,20 @@ class DiffusersNoisePredictorAdapter(nn.Module):
             target_noise=target_noise,
         )
         predicted_noise = self.model(noisy_image, timesteps)
-        return predicted_noise, target_noise
+        return predicted_noise, target_noise, noisy_image, timesteps
+
+    def reconstruct_clean(
+        self,
+        noisy_batch: torch.Tensor,
+        predicted_noise: torch.Tensor,
+        timesteps: torch.Tensor,
+    ) -> torch.Tensor:
+        """Estimate x0 from xt and predicted noise under the wrapped scheduler."""
+
+        alphas_cumprod = self.scheduler.scheduler.alphas_cumprod.to(device=noisy_batch.device, dtype=noisy_batch.dtype)
+        alpha_t = alphas_cumprod[timesteps].view(-1, 1, 1, 1)
+        sigma_t = torch.sqrt((1.0 - alpha_t).clamp_min(0.0))
+        return (noisy_batch - sigma_t * self.noise_level * predicted_noise) / torch.sqrt(alpha_t.clamp_min(1e-12))
 
     def _sample_noisy_inputs(
         self,

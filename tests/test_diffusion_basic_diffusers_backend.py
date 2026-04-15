@@ -37,9 +37,12 @@ def test_diffusion_basic_diffusers_backend_fit_and_infer_emit_noise_artifacts() 
 
     assert artifacts.has("predicted_noise")
     assert artifacts.has("target_noise")
+    assert artifacts.has("reconstruction")
     predicted_noise = artifacts.get_aux("predicted_noise")
     target_noise = artifacts.get_aux("target_noise")
+    reconstruction = artifacts.get_primary("reconstruction")
     assert predicted_noise.shape == target_noise.shape == (3, 16, 16)
+    assert reconstruction.shape == (3, 16, 16)
     assert artifacts.representation == train_representations[0].to_artifact_dict()
 
 

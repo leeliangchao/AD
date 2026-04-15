@@ -16,9 +16,12 @@ from adrf.core.artifacts import NormalityArtifacts
 from adrf.core.sample import Sample
 from adrf.normality.diffusion_basic import (
     _ConditionedResidualConvBlock,
-    _deterministic_noise_like,
-    _normalize_channel_mults,
-    _sinusoidal_timestep_embedding,
+)
+from adrf.normality.diffusion_core import (
+    deterministic_noise_like,
+    legacy_reconstruct_clean,
+    normalize_channel_mults,
+    sinusoidal_timestep_embedding,
 )
 from adrf.normality.base import BaseNormalityModel
 from adrf.normality.state import install_normality_runtime_state, make_default_normality_runtime_state
@@ -67,7 +70,7 @@ class _ConditionedDenoiser(nn.Module):
         image, reference = torch.split(inputs, [self.input_channels, inputs.shape[1] - self.input_channels], dim=1)
         hidden = self.image_projection(image)
         reference_features = self.condition_projection(reference)
-        time_embedding = _sinusoidal_timestep_embedding(timesteps, self.time_embed_dim)
+        time_embedding = sinusoidal_timestep_embedding(timesteps, self.time_embed_dim)
         time_embedding = self.time_mlp(time_embedding).to(dtype=inputs.dtype)
         for reference_adapter, layer in zip(self.reference_injections, self.layers, strict=True):
             hidden = hidden + reference_adapter(reference_features)
@@ -119,7 +122,7 @@ class ReferenceDiffusionBasicNormality(nn.Module, BaseNormalityModel):
         self.base_channels = resolved_base_channels
         self.hidden_channels = resolved_base_channels
         self.condition_channels = resolved_condition_channels
-        self.channel_mults = _normalize_channel_mults(channel_mults)
+        self.channel_mults = normalize_channel_mults(channel_mults)
         self.num_res_blocks = int(num_res_blocks)
         self.time_embed_dim = int(time_embed_dim)
         self.num_train_timesteps = int(num_train_timesteps)
@@ -187,7 +190,7 @@ class ReferenceDiffusionBasicNormality(nn.Module, BaseNormalityModel):
         clean_image = self.require_representation_tensor(representation).float().unsqueeze(0)
         reference = self._prepare_reference_tensor(sample, representation).float().unsqueeze(0)
         inference_identity = sample.sample_id or representation.sample_id or "inference"
-        target_noise = _deterministic_noise_like(
+        target_noise = deterministic_noise_like(
             clean_image,
             type(self).__name__,
             inference_identity,
@@ -203,7 +206,8 @@ class ReferenceDiffusionBasicNormality(nn.Module, BaseNormalityModel):
             conditional_inputs = torch.cat([noisy_image, reference], dim=1)
             predicted_noise = self.conditional_denoiser(conditional_inputs, timesteps)
             noise_scale = self._noise_scale_from_timesteps(timesteps).view(-1, 1, 1, 1)
-            reference_projection = noisy_image - noise_scale * predicted_noise
+            reconstruction = legacy_reconstruct_clean(noisy_image, predicted_noise, noise_scale.view(-1))
+            reference_projection = reconstruction
         conditional_alignment = torch.abs(reference_projection - reference).mean(dim=1).squeeze(0)
 
         return NormalityArtifacts(
@@ -214,7 +218,10 @@ class ReferenceDiffusionBasicNormality(nn.Module, BaseNormalityModel):
                 "mode": "inference",
             },
             representation=self.serialize_representation(representation),
-            primary={"reference_projection": reference_projection.squeeze(0)},
+            primary={
+                "reconstruction": reconstruction.squeeze(0),
+                "reference_projection": reference_projection.squeeze(0),
+            },
             auxiliary={
                 "predicted_noise": predicted_noise.squeeze(0),
                 "target_noise": target_noise.squeeze(0),
@@ -230,6 +237,7 @@ class ReferenceDiffusionBasicNormality(nn.Module, BaseNormalityModel):
             capabilities={
                 "predicted_noise",
                 "target_noise",
+                "reconstruction",
                 "reference_projection",
                 "conditional_alignment",
             },

@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from contextlib import nullcontext
-import hashlib
-import math
 from typing import Sequence
 from typing import Any
 
@@ -17,41 +15,15 @@ from adrf.core.artifacts import NormalityArtifacts
 from adrf.core.sample import Sample
 from adrf.diffusion.adapters import DiffusersNoisePredictorAdapter
 from adrf.normality.base import BaseNormalityModel
+from adrf.normality.diffusion_core import (
+    deterministic_noise_like,
+    legacy_noise_scale_from_timesteps,
+    legacy_reconstruct_clean,
+    normalize_channel_mults,
+    sinusoidal_timestep_embedding,
+)
 from adrf.normality.state import install_normality_runtime_state, make_default_normality_runtime_state
 from adrf.representation.contracts import RepresentationOutput
-
-
-def _normalize_channel_mults(
-    channel_mults: Sequence[int] | None,
-    *,
-    default: tuple[int, ...] = (1,),
-) -> tuple[int, ...]:
-    """Normalize a channel multiplier sequence into a validated tuple."""
-
-    if channel_mults is None:
-        return default
-    normalized = tuple(int(multiplier) for multiplier in channel_mults)
-    if not normalized or any(multiplier < 1 for multiplier in normalized):
-        raise ValueError("channel_mults must be a non-empty sequence of positive integers.")
-    return normalized
-
-
-def _deterministic_noise_like(tensor: torch.Tensor, *identity_parts: object) -> torch.Tensor:
-    """Sample deterministic Gaussian noise from a stable identity tuple."""
-
-    generator = torch.Generator(device="cpu")
-    generator.manual_seed(_stable_identity_seed(*identity_parts))
-    noise = torch.randn(tensor.shape, generator=generator, dtype=torch.float32, device="cpu")
-    return noise.to(device=tensor.device, dtype=tensor.dtype)
-
-
-def _stable_identity_seed(*parts: object) -> int:
-    """Map arbitrary identity parts onto one stable integer seed."""
-
-    payload = "||".join("" if part is None else str(part) for part in parts)
-    digest = hashlib.sha256(payload.encode("utf-8")).digest()
-    return int.from_bytes(digest[:8], byteorder="big", signed=False) % (2**31)
-
 
 class _ResidualConvBlock(nn.Module):
     """A small residual conv block used to scale baseline denoiser capacity."""
@@ -75,34 +47,6 @@ class _ResidualConvBlock(nn.Module):
         hidden = self.act1(self.conv1(inputs))
         hidden = self.conv2(hidden)
         return self.act_out(hidden + residual)
-
-
-def _sinusoidal_timestep_embedding(
-    timesteps: torch.Tensor,
-    embedding_dim: int,
-    max_period: int = 10_000,
-) -> torch.Tensor:
-    """Create sinusoidal timestep embeddings for diffusion conditioning."""
-
-    if embedding_dim < 1:
-        raise ValueError("embedding_dim must be at least 1.")
-
-    half_dim = embedding_dim // 2
-    if half_dim == 0:
-        return timesteps.float().unsqueeze(1)
-
-    exponent = -math.log(max_period) * torch.arange(
-        half_dim,
-        dtype=torch.float32,
-        device=timesteps.device,
-    ) / max(half_dim - 1, 1)
-    frequencies = torch.exp(exponent)
-    angles = timesteps.float().unsqueeze(1) * frequencies.unsqueeze(0)
-    embedding = torch.cat([torch.sin(angles), torch.cos(angles)], dim=1)
-    if embedding_dim % 2 == 1:
-        embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1])], dim=1)
-    return embedding
-
 
 class _ConditionedResidualConvBlock(nn.Module):
     """Residual conv block with scale-shift conditioning."""
@@ -175,7 +119,7 @@ class _NoisePredictor(nn.Module):
             raise ValueError("timesteps must be a 1D tensor aligned with the batch dimension.")
         if noise_scales.ndim != 1 or noise_scales.shape[0] != inputs.shape[0]:
             raise ValueError("noise_scales must be a 1D tensor aligned with the batch dimension.")
-        time_embedding = _sinusoidal_timestep_embedding(timesteps, self.time_embed_dim)
+        time_embedding = sinusoidal_timestep_embedding(timesteps, self.time_embed_dim)
         conditioning = torch.cat(
             [
                 time_embedding,
@@ -235,7 +179,7 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
         self.backend = backend
         self.base_channels = resolved_base_channels
         self.hidden_channels = resolved_base_channels
-        self.channel_mults = _normalize_channel_mults(channel_mults)
+        self.channel_mults = normalize_channel_mults(channel_mults)
         self.num_res_blocks = int(num_res_blocks)
         self.time_embed_dim = int(time_embed_dim)
         self.conditioning_hidden_dim = resolved_conditioning_hidden_dim
@@ -312,7 +256,7 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
 
         clean_image = self.require_representation_tensor(representation).float().unsqueeze(0)
         inference_identity = sample.sample_id or representation.sample_id or "inference"
-        target_noise = _deterministic_noise_like(
+        target_noise = deterministic_noise_like(
             clean_image,
             type(self).__name__,
             inference_identity,
@@ -322,11 +266,12 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
         with torch.no_grad():
             if self.backend == "diffusers":
                 self._ensure_diffusers_backend(sample_size=int(clean_image.shape[-1]))
-                predicted_noise, target_noise = self.diffusers_adapter.forward_infer_step(
+                predicted_noise, target_noise, noisy_image, timesteps = self.diffusers_adapter.forward_infer_step(
                     clean_image,
                     target_noise=target_noise,
                 )
-                inference_timestep = self.num_train_timesteps - 1
+                reconstruction = self.diffusers_adapter.reconstruct_clean(noisy_image, predicted_noise, timesteps)
+                inference_timestep = int(timesteps[0].item())
             else:
                 noisy_image, target_noise, timesteps, noise_scales = self._sample_noisy_inputs(
                     clean_image,
@@ -334,6 +279,7 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
                     target_noise=target_noise,
                 )
                 predicted_noise = self.denoiser(noisy_image, timesteps, noise_scales)
+                reconstruction = legacy_reconstruct_clean(noisy_image, predicted_noise, noise_scales)
                 inference_timestep = int(timesteps[0].item())
         return NormalityArtifacts(
             context={
@@ -342,7 +288,9 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
                 "mode": "inference",
             },
             representation=self.serialize_representation(representation),
-            primary={},
+            primary={
+                "reconstruction": reconstruction.squeeze(0),
+            },
             auxiliary={
                 "predicted_noise": predicted_noise.squeeze(0),
                 "target_noise": target_noise.squeeze(0),
@@ -355,7 +303,7 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
                 "num_train_timesteps": self.num_train_timesteps,
                 "inference_timestep": inference_timestep,
             },
-            capabilities={"predicted_noise", "target_noise"},
+            capabilities={"predicted_noise", "target_noise", "reconstruction"},
         )
 
     def _sample_noisy_inputs(
@@ -401,8 +349,11 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
     def _noise_scale_from_timesteps(self, timesteps: torch.Tensor) -> torch.Tensor:
         """Map discrete timesteps onto bounded per-sample noise scales."""
 
-        timestep_fraction = (timesteps.float() + 1.0) / float(self.num_train_timesteps)
-        return self.noise_level * torch.sqrt(timestep_fraction)
+        return legacy_noise_scale_from_timesteps(
+            timesteps,
+            num_train_timesteps=self.num_train_timesteps,
+            noise_level=self.noise_level,
+        )
 
     def _ensure_diffusers_backend(self, sample_size: int) -> None:
         """Instantiate the diffusers backend lazily when first needed."""

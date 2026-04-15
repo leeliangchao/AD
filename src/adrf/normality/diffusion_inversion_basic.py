@@ -8,7 +8,8 @@ import torch
 
 from adrf.core.artifacts import NormalityArtifacts
 from adrf.core.sample import Sample
-from adrf.normality.diffusion_basic import DiffusionBasicNormality, _deterministic_noise_like
+from adrf.normality.diffusion_basic import DiffusionBasicNormality
+from adrf.normality.diffusion_core import deterministic_noise_like
 from adrf.representation.contracts import RepresentationOutput
 
 
@@ -143,7 +144,7 @@ class DiffusionInversionBasicNormality(DiffusionBasicNormality):
         """Build the initial perturbed state for inversion-style inference."""
 
         clean_image = self.require_representation_tensor(representation).float().unsqueeze(0)
-        perturbation = self.initial_noise_scale * _deterministic_noise_like(
+        perturbation = self.initial_noise_scale * deterministic_noise_like(
             clean_image,
             type(self).__name__,
             identity,
