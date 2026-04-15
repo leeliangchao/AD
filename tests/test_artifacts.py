@@ -39,7 +39,7 @@ def test_artifacts_accessors_and_capability_checks() -> None:
 def test_artifacts_require_raises_for_missing_capabilities() -> None:
     """Missing capabilities should fail fast with a useful error."""
 
-    artifacts = NormalityArtifacts(capabilities={"projection"})
+    artifacts = NormalityArtifacts(primary={"projection": torch.zeros(1)}, capabilities={"projection"})
 
     with pytest.raises(KeyError, match="reconstruction"):
         artifacts.require("projection", "reconstruction")
@@ -76,3 +76,13 @@ def test_artifacts_round_trip_serialized_payload() -> None:
     assert restored.auxiliary == {"memory_distance": 0.25}
     assert restored.diagnostics == {"fit_loss": 0.1}
     assert restored.capabilities == {"projection", "memory_distance"}
+
+
+def test_artifacts_validate_rejects_capabilities_missing_from_payloads() -> None:
+    artifacts = NormalityArtifacts(
+        primary={"projection": [1.0]},
+        capabilities={"projection", "reconstruction"},
+    )
+
+    with pytest.raises(ValueError, match="reconstruction"):
+        artifacts.validate()

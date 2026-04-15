@@ -33,6 +33,7 @@ class BaseEvidenceModel(EvidenceModel, ABC):
     def ensure_required_capabilities(self, artifacts: NormalityArtifacts) -> None:
         """Validate that all subclass-declared capabilities are present."""
 
+        artifacts.validate()
         if self.required_capabilities:
             artifacts.require(*sorted(self.required_capabilities))
 

@@ -30,9 +30,22 @@ def test_feature_distance_evidence_outputs_map_and_score() -> None:
 def test_feature_distance_evidence_requires_declared_capabilities() -> None:
     """Missing artifact capabilities should raise before prediction."""
 
-    artifacts = NormalityArtifacts(capabilities={"feature_response"})
+    artifacts = NormalityArtifacts(
+        auxiliary={"feature_response": torch.ones(4, 2, 2)},
+        capabilities={"feature_response"},
+    )
     sample = Sample(image=torch.zeros(3, 8, 8))
 
     with pytest.raises(KeyError, match="memory_distance"):
         FeatureDistanceEvidence().predict(sample, artifacts)
 
+
+def test_feature_distance_evidence_rejects_invalid_artifact_capability_payload_mismatch() -> None:
+    artifacts = NormalityArtifacts(
+        auxiliary={"feature_response": torch.ones(4, 2, 2)},
+        capabilities={"feature_response", "memory_distance"},
+    )
+    sample = Sample(image=torch.zeros(3, 8, 8))
+
+    with pytest.raises(ValueError, match="memory_distance"):
+        FeatureDistanceEvidence().predict(sample, artifacts)

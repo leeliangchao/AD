@@ -24,9 +24,18 @@ class NormalityArtifacts:
 
         return capability in self.capabilities
 
+    def validate(self) -> None:
+        """Validate that declared capabilities are backed by payload keys."""
+
+        available = set(self.primary) | set(self.auxiliary) | set(self.diagnostics)
+        missing = sorted(capability for capability in self.capabilities if capability not in available)
+        if missing:
+            raise ValueError(f"Artifact capabilities missing payload values: {', '.join(missing)}")
+
     def require(self, *capabilities: str) -> None:
         """Validate that all requested capabilities are available."""
 
+        self.validate()
         missing = [capability for capability in capabilities if capability not in self.capabilities]
         if missing:
             missing_text = ", ".join(sorted(missing))
@@ -50,6 +59,7 @@ class NormalityArtifacts:
     def to_dict(self) -> dict[str, Any]:
         """Serialize one artifacts payload into a plain mapping."""
 
+        self.validate()
         return {
             "context": dict(self.context),
             "representation": dict(self.representation),
