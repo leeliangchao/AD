@@ -54,6 +54,33 @@ def test_diffusion_basic_initializes_explicit_runtime_state_with_legacy_aliases(
     assert model.runtime.grad_scaler is model.grad_scaler
 
 
+def test_autoencoder_initializes_explicit_runtime_state_with_legacy_aliases() -> None:
+    model = AutoEncoderNormality()
+
+    assert isinstance(model.runtime, NormalityRuntimeState)
+    assert model.runtime.device == model.runtime_device
+    assert model.runtime.amp_enabled == model.amp_enabled
+    assert model.runtime.grad_scaler is model.grad_scaler
+
+
+def test_reference_basic_initializes_explicit_runtime_state_with_legacy_aliases() -> None:
+    model = ReferenceBasicNormality()
+
+    assert isinstance(model.runtime, NormalityRuntimeState)
+    assert model.runtime.device == model.runtime_device
+    assert model.runtime.amp_enabled == model.amp_enabled
+    assert model.runtime.grad_scaler is model.grad_scaler
+
+
+def test_reference_diffusion_initializes_explicit_runtime_state_with_legacy_aliases() -> None:
+    model = ReferenceDiffusionBasicNormality()
+
+    assert isinstance(model.runtime, NormalityRuntimeState)
+    assert model.runtime.device == model.runtime_device
+    assert model.runtime.amp_enabled == model.amp_enabled
+    assert model.runtime.grad_scaler is model.grad_scaler
+
+
 def test_configure_trainable_runtime_does_not_patch_duck_typed_impostor() -> None:
     impostor = _Impostor()
     original_fit = impostor.fit

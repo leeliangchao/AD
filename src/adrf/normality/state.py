@@ -16,3 +16,15 @@ class NormalityRuntimeState:
     grad_scaler: torch.amp.GradScaler
     distributed_context: DistributedRuntimeContext
     distributed_training_enabled: bool
+
+
+def make_default_normality_runtime_state() -> NormalityRuntimeState:
+    from adrf.utils.distributed import DistributedRuntimeContext
+
+    return NormalityRuntimeState(
+        device=torch.device("cpu"),
+        amp_enabled=False,
+        grad_scaler=torch.amp.GradScaler("cuda", enabled=False),
+        distributed_context=DistributedRuntimeContext(),
+        distributed_training_enabled=False,
+    )
