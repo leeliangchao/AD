@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 from torch import nn
+import torch
 
 from adrf.normality.training import (
     JointNormalityTrainingAdapter,
     OfflineNormalityTrainingAdapter,
     resolve_normality_training_adapter,
+    validate_normality_representation_contract,
 )
+from adrf.representation.contracts import RepresentationOutput, RepresentationProvenance
 
 
 class _OfflineNormality:
@@ -44,6 +49,48 @@ class _IncompleteJointNormality:
     fit_mode = "joint"
 
 
+class _FeatureOfflineNormality(_OfflineNormality):
+    accepted_spaces = frozenset({"feature"})
+    accepted_tensor_ranks = frozenset({3})
+    requires_detached_representation = True
+
+
+def _representation_output(
+    *,
+    space: str = "feature",
+    tensor: torch.Tensor | None = None,
+    requires_grad: bool | None = None,
+) -> RepresentationOutput:
+    resolved_tensor = tensor if tensor is not None else torch.ones(4, 2, 2)
+    resolved_requires_grad = bool(resolved_tensor.requires_grad if requires_grad is None else requires_grad)
+    provenance = RepresentationProvenance(
+        representation_name=space,
+        backbone_name="toy",
+        weights_source=None,
+        feature_layer="unit",
+        pooling=None,
+        trainable=False,
+        frozen_submodules=(),
+        input_image_size=(8, 8),
+        input_normalize=False,
+        normalize_mean=None,
+        normalize_std=None,
+        code_version="tests",
+        config_fingerprint="normality-training",
+    )
+    return RepresentationOutput(
+        tensor=resolved_tensor,
+        space=space,
+        spatial_shape=tuple(resolved_tensor.shape[-2:]) if resolved_tensor.ndim == 3 else None,
+        feature_dim=int(resolved_tensor.shape[0]),
+        sample_id="sample-001",
+        requires_grad=resolved_requires_grad,
+        device=str(resolved_tensor.device),
+        dtype=str(resolved_tensor.dtype),
+        provenance=provenance,
+    )
+
+
 def test_resolve_normality_training_adapter_supports_offline_and_joint_modes() -> None:
     assert isinstance(resolve_normality_training_adapter(_OfflineNormality()), OfflineNormalityTrainingAdapter)
     assert isinstance(resolve_normality_training_adapter(_JointNormality()), JointNormalityTrainingAdapter)
@@ -78,3 +125,35 @@ def test_resolve_normality_training_adapter_rejects_unsupported_mode() -> None:
 def test_resolve_normality_training_adapter_rejects_incomplete_joint_contract() -> None:
     with pytest.raises(RuntimeError, match="must implement joint training"):
         resolve_normality_training_adapter(_IncompleteJointNormality())
+
+
+def test_validate_normality_representation_contract_accepts_matching_offline_contract() -> None:
+    representation = SimpleNamespace(space="feature")
+    probe_output = _representation_output()
+
+    validate_normality_representation_contract(_FeatureOfflineNormality(), representation, probe_output)
+
+
+def test_validate_normality_representation_contract_rejects_space_mismatch() -> None:
+    representation = SimpleNamespace(space="pixel")
+    probe_output = _representation_output()
+
+    with pytest.raises(ValueError, match="requires representation space"):
+        validate_normality_representation_contract(_FeatureOfflineNormality(), representation, probe_output)
+
+
+def test_validate_normality_representation_contract_rejects_rank_mismatch() -> None:
+    representation = SimpleNamespace(space="feature")
+    probe_output = _representation_output(tensor=torch.ones(4))
+
+    with pytest.raises(ValueError, match="requires representation tensor rank"):
+        validate_normality_representation_contract(_FeatureOfflineNormality(), representation, probe_output)
+
+
+def test_validate_normality_representation_contract_rejects_grad_carrying_offline_output() -> None:
+    representation = SimpleNamespace(space="feature")
+    tensor = torch.ones(4, 2, 2, requires_grad=True)
+    probe_output = _representation_output(tensor=tensor, requires_grad=True)
+
+    with pytest.raises(ValueError, match="detached representations for offline fit mode"):
+        validate_normality_representation_contract(_FeatureOfflineNormality(), representation, probe_output)
