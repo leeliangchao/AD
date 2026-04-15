@@ -10,6 +10,7 @@ from adrf.normality.diffusion_inversion_basic import DiffusionInversionBasicNorm
 from adrf.normality.reference_basic import ReferenceBasicNormality
 from adrf.normality.reference_diffusion_basic import ReferenceDiffusionBasicNormality
 from adrf.normality.runtime import resolve_normality_runtime_spec
+from adrf.normality.state import NormalityRuntimeState
 from adrf.utils.distributed import DistributedRuntimeContext
 from adrf.utils.runtime import configure_trainable_runtime
 
@@ -56,3 +57,24 @@ def test_configure_trainable_runtime_does_not_patch_duck_typed_impostor() -> Non
     )
 
     assert impostor.fit is original_fit
+
+
+def test_configure_trainable_runtime_attaches_explicit_runtime_state() -> None:
+    model = AutoEncoderNormality(input_channels=3, hidden_channels=4, latent_channels=8)
+    context = DistributedRuntimeContext()
+
+    configure_trainable_runtime(
+        model,
+        device=nn.Parameter().device,
+        amp_enabled=False,
+        distributed_context=context,
+    )
+
+    assert isinstance(model.runtime, NormalityRuntimeState)
+    assert model.runtime.device.type == "cpu"
+    assert model.runtime.amp_enabled is False
+    assert model.runtime.distributed_context is context
+    assert model.runtime.distributed_training_enabled is False
+    assert model.runtime_device == model.runtime.device
+    assert model.amp_enabled == model.runtime.amp_enabled
+    assert model.distributed_context is model.runtime.distributed_context
