@@ -44,20 +44,13 @@ class BaseProtocol(ProtocolContract, ABC):
 
     def run(self, runner: Any) -> dict[str, Any]:
         mode = self._resolve_mode()
-        context: ProtocolContext | None = None
-
-        def get_context() -> ProtocolContext:
-            nonlocal context
-            if context is None:
-                context = self.build_context(runner)
-            return context
 
         if mode == "legacy":
             train_result = self.train_epoch(runner)
             evaluation_result = self.evaluate(runner)
         elif mode == "typed":
-            train_result = self.train(get_context()).to_dict()
-            evaluation_result = self.evaluate_context(get_context()).to_dict()
+            train_result = self.train(self.build_train_context(runner)).to_dict()
+            evaluation_result = self.evaluate_context(self.build_evaluate_context(runner)).to_dict()
         else:
             raise RuntimeError(mode)
 

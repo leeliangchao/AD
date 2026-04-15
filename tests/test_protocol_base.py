@@ -22,6 +22,25 @@ class _FakeProtocol(BaseProtocol):
         return EvaluationSummary(metrics={"image_auroc": 0.9})
 
 
+class _PhaseTrackingProtocol(_FakeProtocol):
+    def __init__(self) -> None:
+        super().__init__()
+        self.train_builder_runners = []
+        self.evaluate_builder_runners = []
+
+    def build_context(self, runner):
+        del runner
+        raise AssertionError("typed run() should not call build_context().")
+
+    def build_train_context(self, runner):
+        self.train_builder_runners.append(runner)
+        return "train-context"
+
+    def build_evaluate_context(self, runner):
+        self.evaluate_builder_runners.append(runner)
+        return "evaluate-context"
+
+
 class _LegacyProtocol(BaseProtocol):
     def __init__(self) -> None:
         self.train_runners = []
@@ -51,20 +70,20 @@ class _MixedProtocol(BaseProtocol):
         return EvaluationSummary(metrics={"image_auroc": 0.8})
 
 
-def test_base_protocol_run_reuses_one_context_and_serializes_typed_results(monkeypatch) -> None:
-    protocol = _FakeProtocol()
-    context = object()
+def test_base_protocol_run_uses_phase_specific_builders_for_typed_results() -> None:
+    protocol = _PhaseTrackingProtocol()
+    runner = SimpleNamespace()
 
-    monkeypatch.setattr(protocol, "build_context", lambda runner: context)
-
-    results = protocol.run(SimpleNamespace())
+    results = protocol.run(runner)
 
     assert results == {
         "train": {"num_train_batches": 1, "num_train_samples": 2, "loss": 0.5},
         "evaluation": {"image_auroc": 0.9},
     }
-    assert protocol.train_contexts == [context]
-    assert protocol.eval_contexts == [context]
+    assert protocol.train_builder_runners == [runner]
+    assert protocol.evaluate_builder_runners == [runner]
+    assert protocol.train_contexts == ["train-context"]
+    assert protocol.eval_contexts == ["evaluate-context"]
 
 
 def test_base_protocol_train_epoch_and_evaluate_keep_public_contract(monkeypatch) -> None:
