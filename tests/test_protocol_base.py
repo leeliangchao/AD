@@ -70,6 +70,34 @@ class _MixedProtocol(BaseProtocol):
         return EvaluationSummary(metrics={"image_auroc": 0.8})
 
 
+class _BuildContextOnlyTypedProtocol(BaseProtocol):
+    def __init__(self) -> None:
+        self.build_context_calls = 0
+        self.train_context_indexes = []
+        self.evaluate_context_indexes = []
+
+    def build_context(self, runner):
+        self.build_context_calls += 1
+        return SimpleNamespace(
+            call_index=self.build_context_calls,
+            train_loader=f"runner-train-{self.build_context_calls}",
+            test_loader=f"runner-test-{self.build_context_calls}",
+            runner=runner,
+        )
+
+    def train(self, context):
+        self.train_context_indexes.append(context.call_index)
+        return TrainSummary(
+            num_train_batches=context.call_index,
+            num_train_samples=context.call_index + 1,
+            metrics={"loss": float(context.call_index)},
+        )
+
+    def evaluate_context(self, context):
+        self.evaluate_context_indexes.append(context.call_index)
+        return EvaluationSummary(metrics={"image_auroc": float(context.call_index)})
+
+
 def test_base_protocol_run_uses_phase_specific_builders_for_typed_results() -> None:
     protocol = _PhaseTrackingProtocol()
     runner = SimpleNamespace()
@@ -84,6 +112,37 @@ def test_base_protocol_run_uses_phase_specific_builders_for_typed_results() -> N
     assert protocol.evaluate_builder_runners == [runner]
     assert protocol.train_contexts == ["train-context"]
     assert protocol.eval_contexts == ["evaluate-context"]
+
+
+def test_base_protocol_typed_defaults_respect_build_context_override() -> None:
+    protocol = _BuildContextOnlyTypedProtocol()
+    runner = SimpleNamespace(
+        datamodule=SimpleNamespace(
+            train_dataloader=lambda: "runner-train-loader",
+            test_dataloader=lambda: "runner-test-loader",
+        ),
+        normality=object(),
+        evidence=object(),
+        evaluator=object(),
+    )
+
+    train_summary = protocol.train_epoch(runner)
+    evaluation_summary = protocol.evaluate(runner)
+    run_summary = protocol.run(runner)
+
+    assert train_summary == {
+        "num_train_batches": 1,
+        "num_train_samples": 2,
+        "loss": 1.0,
+    }
+    assert evaluation_summary == {"image_auroc": 2.0}
+    assert run_summary == {
+        "train": {"num_train_batches": 3, "num_train_samples": 4, "loss": 3.0},
+        "evaluation": {"image_auroc": 4.0},
+    }
+    assert protocol.build_context_calls == 4
+    assert protocol.train_context_indexes == [1, 3]
+    assert protocol.evaluate_context_indexes == [2, 4]
 
 
 def test_base_protocol_train_epoch_and_evaluate_keep_public_contract(monkeypatch) -> None:

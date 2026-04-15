@@ -31,9 +31,13 @@ class BaseProtocol(ProtocolContract, ABC):
         return ProtocolContext.from_runner(runner)
 
     def build_train_context(self, runner: Any) -> ProtocolContext:
+        if type(self).build_context is not BaseProtocol.build_context:
+            return self.build_context(runner)
         return ProtocolContext.from_runner(runner, phase="train")
 
     def build_evaluate_context(self, runner: Any) -> ProtocolContext:
+        if type(self).build_context is not BaseProtocol.build_context:
+            return self.build_context(runner)
         return ProtocolContext.from_runner(runner, phase="evaluate")
 
     def train_epoch(self, runner: Any) -> dict[str, Any]:
