@@ -58,3 +58,23 @@ def test_feature_memory_normalizes_legacy_representation_artifacts() -> None:
         "dtype": "torch.float32",
         "provenance": None,
     }
+
+
+def test_feature_memory_chunked_distance_matches_full_distance() -> None:
+    base = torch.arange(4 * 3 * 3, dtype=torch.float32).reshape(4, 3, 3)
+    train_representations = [
+        make_feature_output(base / 10.0, sample_id="train-001"),
+        make_feature_output((base + 1.0) / 10.0, sample_id="train-002"),
+    ]
+    query_representation = make_feature_output((base + 0.5) / 10.0, sample_id="query")
+    sample = Sample(image=torch.zeros(3, 8, 8), sample_id="query")
+
+    full = FeatureMemoryNormality(distance_chunk_size=None)
+    chunked = FeatureMemoryNormality(distance_chunk_size=2)
+    full.fit(train_representations)
+    chunked.fit(train_representations)
+
+    full_artifacts = full.infer(sample, query_representation)
+    chunked_artifacts = chunked.infer(sample, query_representation)
+
+    assert torch.allclose(full_artifacts.get_aux("memory_distance"), chunked_artifacts.get_aux("memory_distance"))
