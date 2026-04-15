@@ -341,3 +341,52 @@ def test_experiment_runner_setup_exercises_runtime_representation_adapter_path(t
     assert before_calls >= 1
     assert batch.batch_size == len(train_batch)
     assert batch.space == "feature"
+
+
+def test_experiment_runner_one_class_protocol_preserves_external_result_shape(tmp_path: Path) -> None:
+    dataset_root = tmp_path / "mvtec"
+    _write_fixture_dataset(dataset_root)
+    config_path = tmp_path / "recon.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "datamodule:",
+                "  name: mvtec_single_class",
+                "  params:",
+                f"    root: {dataset_root.as_posix()}",
+                "    category: bottle",
+                "    image_size: [32, 32]",
+                "    batch_size: 2",
+                "    num_workers: 0",
+                "    normalize: false",
+                "representation:",
+                "  name: pixel",
+                "  params: {}",
+                "normality:",
+                "  name: autoencoder",
+                "  params:",
+                "    input_channels: 3",
+                "    hidden_channels: 4",
+                "    latent_channels: 8",
+                "    epochs: 1",
+                "    batch_size: 2",
+                "evidence:",
+                "  name: reconstruction_residual",
+                "  params:",
+                "    aggregator: mean",
+                "evaluator:",
+                "  name: basic_ad",
+                "  params: {}",
+                "protocol:",
+                "  name: one_class",
+                "  params: {}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    results = ExperimentRunner(config_path).run()
+
+    assert set(results) == {"train", "evaluation"}
+    assert {"num_train_batches", "num_train_samples"} <= set(results["train"])
+    assert {"image_auroc", "pixel_auroc", "pixel_aupr"} <= set(results["evaluation"])

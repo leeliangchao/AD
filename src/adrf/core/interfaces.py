@@ -57,7 +57,7 @@ class NormalityModel(ABC):
         representations: Iterable[RepresentationOutput],
         samples: Iterable[Sample] | None = None,
     ) -> None:
-        """Fit the model using normal training representations."""
+        """Fit the model using normal training representations under the legacy offline contract."""
 
     def configure_joint_training(self, representation_model: Any) -> None:
         del representation_model
@@ -81,7 +81,7 @@ class EvidenceModel(ABC):
 
 
 class Protocol(ABC):
-    """Coordinate the runner-owned pipeline stages under one runtime contract."""
+    """Public runner-facing protocol contract preserved for compatibility with ExperimentRunner."""
 
     @abstractmethod
     def train_epoch(self, runner: Any) -> dict[str, Any]:

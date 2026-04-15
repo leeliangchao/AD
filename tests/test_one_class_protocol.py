@@ -13,6 +13,7 @@ from adrf.evidence.reconstruction_residual import ReconstructionResidualEvidence
 from adrf.normality.autoencoder import AutoEncoderNormality
 from adrf.normality.feature_memory import FeatureMemoryNormality
 from adrf.protocol.one_class import OneClassProtocol
+from adrf.protocol.results import TrainSummary
 from adrf.representation.feature import FeatureRepresentation
 from adrf.representation.pixel import PixelRepresentation
 
@@ -129,7 +130,18 @@ def test_one_class_protocol_runs_reconstruction_baseline(tmp_path: Path) -> None
     assert train_summary["num_train_samples"] == 2
     assert set(metrics) == {"image_auroc", "pixel_auroc", "pixel_aupr"}
 
+class _RecordingOfflineNormality:
+    def __init__(self) -> None:
+        self.fit_calls: list[tuple[int, int]] = []
 
+    def fit(self, representations, samples=None) -> None:
+        representation_list = list(representations)
+        sample_list = [] if samples is None else list(samples)
+        self.fit_calls.append((len(representation_list), len(sample_list)))
+
+    def infer(self, sample, representation):
+        del sample, representation
+        raise AssertionError("test does not exercise inference.")
 def test_one_class_protocol_offline_fit_aggregates_distributed_train_summary(
     tmp_path: Path,
     monkeypatch,
@@ -149,12 +161,14 @@ def test_one_class_protocol_offline_fit_aggregates_distributed_train_summary(
         normality=normality,
         distributed_context=SimpleNamespace(enabled=True, world_size=2),
         distributed_training_enabled=False,
+        evidence=FeatureDistanceEvidence(),
+        evaluator=BasicADEvaluator(),
     )
     protocol = OneClassProtocol()
 
     def _fake_all_gather(payload, context):
         del context
-        if "samples" in payload:
+        if isinstance(payload, dict) and "samples" in payload:
             return [
                 payload,
                 {
@@ -164,10 +178,11 @@ def test_one_class_protocol_offline_fit_aggregates_distributed_train_summary(
             ]
         return [
             payload,
-            {"num_train_batches": 2, "num_train_samples": 3},
+            TrainSummary(num_train_batches=2, num_train_samples=3),
         ]
 
-    monkeypatch.setattr("adrf.protocol.one_class.all_gather_objects", _fake_all_gather)
+    monkeypatch.setattr("adrf.protocol.training.all_gather_objects", _fake_all_gather)
+    monkeypatch.setattr("adrf.protocol.runtime_support.all_gather_objects", _fake_all_gather)
 
     train_summary = protocol.train_epoch(runner)
 
