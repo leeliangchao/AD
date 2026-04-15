@@ -49,6 +49,34 @@ def test_write_benchmark_summary_creates_markdown_and_csv(tmp_path: Path) -> Non
     assert payload["suite_name"] == "demo_suite"
 
 
+def test_write_benchmark_summary_falls_back_to_record_budget_when_run_info_missing(tmp_path: Path) -> None:
+    outputs = write_benchmark_summary(
+        records=[
+            {
+                "experiment_name": "feature_baseline",
+                "status": "completed",
+                "dataset": "mvtec_bottle",
+                "representation": "feature",
+                "normality": "feature_memory",
+                "evidence": "feature_distance",
+                "metrics": {"image_auroc": 1.0, "pixel_auroc": 0.9, "pixel_aupr": 0.8, "total_time": 12.0},
+                "budget": {"max_epochs": 10, "batch_size": 32, "backend": "legacy"},
+                "run_path": "",
+                "config_path": "/tmp/config.yaml",
+            }
+        ],
+        output_dir=tmp_path / "suite",
+        suite_name="demo_suite",
+    )
+
+    markdown = outputs["markdown"].read_text(encoding="utf-8")
+    csv_text = outputs["csv"].read_text(encoding="utf-8")
+
+    assert "ep=10, bs=32, backend=legacy" in markdown
+    assert "12.0" in markdown
+    assert "legacy" in csv_text
+
+
 def test_export_ablation_summary_creates_markdown_and_csv(tmp_path: Path) -> None:
     """Ablation summary export should create markdown, CSV, and JSON assets."""
 
