@@ -192,6 +192,7 @@ class ReferenceBasicNormality(nn.Module, BaseNormalityModel):
         target_size = tuple(image.shape[-2:])
         reference = sample.reference
         if isinstance(reference, torch.Tensor):
+            was_uint8 = reference.dtype == torch.uint8
             reference_tensor = reference.float()
             if reference_tensor.ndim == 4 and reference_tensor.shape[0] == 1:
                 reference_tensor = reference_tensor.squeeze(0)
@@ -204,6 +205,8 @@ class ReferenceBasicNormality(nn.Module, BaseNormalityModel):
                     interpolation=InterpolationMode.BILINEAR,
                     antialias=True,
                 )
+            if was_uint8 or reference_tensor.max() > 1:
+                reference_tensor = reference_tensor / 255.0
             return reference_tensor.to(dtype=image.dtype, device=image.device)
 
         if isinstance(reference, Image.Image):

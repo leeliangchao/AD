@@ -139,6 +139,34 @@ def test_reference_diffusion_basic_accepts_pil_reference_fallback() -> None:
     assert artifacts.representation["sample_id"] == "sample-pil"
 
 
+def test_reference_diffusion_treats_uint8_tensor_reference_like_pil_reference() -> None:
+    image = torch.rand(3, 16, 16)
+    pil_reference = Image.new("RGB", (16, 16), color=(255, 128, 0))
+    tensor_reference = torch.tensor([255, 128, 0], dtype=torch.uint8).view(3, 1, 1).expand(3, 16, 16)
+    representation = make_pixel_output(image, sample_id="sample-ref")
+    model = ReferenceDiffusionBasicNormality(
+        input_channels=3,
+        hidden_channels=8,
+        time_embed_dim=32,
+        num_train_timesteps=32,
+        learning_rate=1e-3,
+        epochs=1,
+        batch_size=1,
+        noise_level=0.2,
+    )
+
+    pil_tensor = model._prepare_reference_tensor(
+        Sample(image=image, reference=pil_reference, sample_id="sample-ref"),
+        representation,
+    )
+    uint8_tensor = model._prepare_reference_tensor(
+        Sample(image=image, reference=tensor_reference, sample_id="sample-ref"),
+        representation,
+    )
+
+    assert torch.allclose(pil_tensor, uint8_tensor)
+
+
 def test_reference_diffusion_legacy_mapping_emits_normalized_representation_payload() -> None:
     """ReferenceDiffusionBasicNormality should normalize legacy mapping inputs in emitted artifacts."""
 
