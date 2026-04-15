@@ -171,6 +171,34 @@ class _JointCompatibleNormality(nn.Module, BaseNormalityModel):
         raise AssertionError("test does not exercise inference.")
 
 
+class _InvalidFitModeNormality(nn.Module, BaseNormalityModel):
+    fit_mode = "weird"
+    accepted_spaces = frozenset({"feature"})
+    accepted_tensor_ranks = frozenset({3})
+    requires_detached_representation = False
+
+    def fit(self, representations, samples=None) -> None:
+        del representations, samples
+
+    def infer(self, sample, representation):
+        del sample, representation
+        raise AssertionError("test does not exercise inference.")
+
+
+class _IncompleteJointNormality(nn.Module, BaseNormalityModel):
+    fit_mode = "joint"
+    accepted_spaces = frozenset({"feature"})
+    accepted_tensor_ranks = frozenset({3})
+    requires_detached_representation = False
+
+    def fit(self, representations, samples=None) -> None:
+        del representations, samples
+
+    def infer(self, sample, representation):
+        del sample, representation
+        raise AssertionError("test does not exercise inference.")
+
+
 def _write_runner_config(config_path: Path, dataset_root: Path, *, representation_name: str, normality_name: str) -> None:
     config_path.write_text(
         "\n".join(
@@ -390,3 +418,43 @@ def test_experiment_runner_one_class_protocol_preserves_external_result_shape(tm
     assert set(results) == {"train", "evaluation"}
     assert {"num_train_batches", "num_train_samples"} <= set(results["train"])
     assert {"image_auroc", "pixel_auroc", "pixel_aupr"} <= set(results["evaluation"])
+
+
+def test_experiment_runner_rejects_unsupported_normality_fit_mode_during_setup(tmp_path: Path) -> None:
+    dataset_root = tmp_path / "mvtec"
+    _write_fixture_dataset(dataset_root)
+    config_path = tmp_path / "invalid_fit_mode.yaml"
+    _write_runner_config(
+        config_path,
+        dataset_root,
+        representation_name="recording_joint_feature",
+        normality_name="invalid_fit_mode",
+    )
+    registry = build_default_registry()
+    registry.register("representation", "recording_joint_feature", _RecordingJointRepresentation)
+    registry.register("normality", "invalid_fit_mode", _InvalidFitModeNormality)
+
+    runner = ExperimentRunner(config_path, registry=registry)
+
+    with pytest.raises(ValueError, match="Unsupported normality fit mode"):
+        runner.setup()
+
+
+def test_experiment_runner_rejects_incomplete_joint_training_contract_during_setup(tmp_path: Path) -> None:
+    dataset_root = tmp_path / "mvtec"
+    _write_fixture_dataset(dataset_root)
+    config_path = tmp_path / "incomplete_joint_contract.yaml"
+    _write_runner_config(
+        config_path,
+        dataset_root,
+        representation_name="recording_joint_feature",
+        normality_name="incomplete_joint_contract",
+    )
+    registry = build_default_registry()
+    registry.register("representation", "recording_joint_feature", _RecordingJointRepresentation)
+    registry.register("normality", "incomplete_joint_contract", _IncompleteJointNormality)
+
+    runner = ExperimentRunner(config_path, registry=registry)
+
+    with pytest.raises(RuntimeError, match="must implement joint training"):
+        runner.setup()

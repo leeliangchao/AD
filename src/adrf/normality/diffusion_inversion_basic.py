@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Sequence
-from typing import Any
 
 import torch
 
@@ -76,7 +74,7 @@ class DiffusionInversionBasicNormality(DiffusionBasicNormality):
     def infer(
         self,
         sample: Sample,
-        representation: RepresentationOutput | Mapping[str, Any],
+        representation: RepresentationOutput,
     ) -> NormalityArtifacts:
         """Run a fixed denoising trajectory and expose step-aligned process artifacts."""
 
@@ -137,7 +135,7 @@ class DiffusionInversionBasicNormality(DiffusionBasicNormality):
             capabilities={"trajectory", "step_costs"},
         )
 
-    def _initial_state(self, representation: Mapping[str, Any]) -> torch.Tensor:
+    def _initial_state(self, representation: RepresentationOutput) -> torch.Tensor:
         """Build the initial perturbed state for inversion-style inference."""
 
         clean_image = self.require_representation_tensor(representation).float().unsqueeze(0)

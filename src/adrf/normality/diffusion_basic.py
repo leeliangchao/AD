@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 from contextlib import nullcontext
 import math
 from typing import Sequence
@@ -240,7 +240,7 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
 
     def fit(
         self,
-        representations: Iterable[RepresentationOutput | Mapping[str, Any]],
+        representations: Iterable[RepresentationOutput],
         samples: Iterable[Sample] | None = None,
     ) -> None:
         """Train the denoiser on normal pixel-space representations."""
@@ -289,7 +289,7 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
     def infer(
         self,
         sample: Sample,
-        representation: RepresentationOutput | Mapping[str, Any],
+        representation: RepresentationOutput,
     ) -> NormalityArtifacts:
         """Run one single-step noise-prediction pass and emit diffusion artifacts."""
 

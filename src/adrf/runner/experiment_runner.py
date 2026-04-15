@@ -33,6 +33,7 @@ from adrf.normality.diffusion_inversion_basic import DiffusionInversionBasicNorm
 from adrf.normality.feature_memory import FeatureMemoryNormality
 from adrf.normality.reference_basic import ReferenceBasicNormality
 from adrf.normality.reference_diffusion_basic import ReferenceDiffusionBasicNormality
+from adrf.normality.training import resolve_normality_training_adapter
 from adrf.protocol.one_class import OneClassProtocol
 from adrf.registry.registry import Registry
 from adrf.reporting.report import export_experiment_report
@@ -208,6 +209,8 @@ class ExperimentRunner:
                 f"{type(self.normality).__name__} requires detached representations for offline fit mode, "
                 f"but {type(getattr(self.representation, 'representation', self.representation)).__name__} emits a trainable representation."
             )
+
+        resolve_normality_training_adapter(self.normality)
 
     def _probe_representation_contract_output(self) -> Any:
         """Inspect one representation output without mutating representation training state."""
