@@ -125,6 +125,8 @@ class RunLogger(BaseLogger):
     def finish_run(self, status: str = "completed") -> None:
         """Update run metadata with the final status."""
 
+        if self.run_dir is None:
+            return
         run_dir = self._require_run_dir()
         self.run_info["status"] = status
         self.run_info["finished_at"] = datetime.now(timezone.utc).isoformat()

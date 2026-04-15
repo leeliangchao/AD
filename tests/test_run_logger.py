@@ -35,3 +35,10 @@ def test_run_logger_creates_run_dir_and_persists_core_files(tmp_path: Path) -> N
     assert run_info["status"] == "completed"
     assert metrics["latest"]["evaluation.image_auroc"] == 1.0
 
+
+def test_run_logger_finish_run_is_noop_before_start() -> None:
+    logger = RunLogger()
+
+    logger.finish_run(status="failed")
+
+    assert logger.run_dir is None
