@@ -34,11 +34,18 @@ class JointNormalityTrainingAdapter(BaseNormalityTrainingAdapter):
 def resolve_normality_training_adapter(normality: object) -> BaseNormalityTrainingAdapter:
     fit_mode = str(getattr(normality, "fit_mode", "offline"))
     if fit_mode == "offline":
+        _validate_offline_training_contract(normality)
         return OfflineNormalityTrainingAdapter(normality)
     if fit_mode == "joint":
         _validate_joint_training_contract(normality)
         return JointNormalityTrainingAdapter(normality)
     raise ValueError(f"Unsupported normality fit mode: {fit_mode}")
+
+
+def _validate_offline_training_contract(normality: object) -> None:
+    fit = getattr(normality, "fit", None)
+    if not callable(fit) or getattr(type(normality), "fit", None) is getattr(NormalityModel, "fit", None):
+        raise RuntimeError(f"{type(normality).__name__} must implement offline training fit().")
 
 
 def _validate_joint_training_contract(normality: object) -> None:
