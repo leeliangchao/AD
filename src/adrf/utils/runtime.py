@@ -13,6 +13,7 @@ from torch import nn
 from torch.nn.parallel import DistributedDataParallel
 
 from adrf.core.sample import Sample
+from adrf.normality.runtime import resolve_normality_runtime_spec
 from adrf.utils.config import load_yaml_config
 from adrf.utils.distributed import DistributedRuntimeContext
 
@@ -330,13 +331,18 @@ def _wrap_fit_for_runtime(model: object) -> None:
     if getattr(model, "_adrf_runtime_wrapped", False):
         return
 
-    if hasattr(model, "encoder") and hasattr(model, "decoder") and hasattr(model, "_forward_impl"):
+    runtime_spec = resolve_normality_runtime_spec(model)
+    if runtime_spec is None:
+        setattr(model, "_adrf_runtime_wrapped", True)
+        return
+
+    if runtime_spec.fit_wrapper_id == "autoencoder":
         model.fit = _make_autoencoder_fit(model)  # type: ignore[method-assign]
-    elif hasattr(model, "conditional_denoiser") and hasattr(model, "_prepare_reference_tensor"):
+    elif runtime_spec.fit_wrapper_id == "reference_diffusion":
         model.fit = _make_reference_diffusion_fit(model)  # type: ignore[method-assign]
-    elif hasattr(model, "conditional_model") and hasattr(model, "_prepare_reference_tensor"):
+    elif runtime_spec.fit_wrapper_id == "reference_basic":
         model.fit = _make_reference_basic_fit(model)  # type: ignore[method-assign]
-    elif hasattr(model, "denoiser") and hasattr(model, "_sample_noisy_inputs"):
+    elif runtime_spec.fit_wrapper_id == "diffusion":
         model.fit = _make_diffusion_fit(model)  # type: ignore[method-assign]
 
     setattr(model, "_adrf_runtime_wrapped", True)
@@ -370,15 +376,10 @@ def _wrap_trainable_modules_for_distributed(
 def _distributed_trainable_module_names(model: object) -> tuple[str, ...]:
     """Return the trainable submodules that should be wrapped for DDP."""
 
-    if hasattr(model, "encoder") and hasattr(model, "decoder"):
-        return ("encoder", "decoder")
-    if hasattr(model, "conditional_denoiser"):
-        return ("conditional_denoiser",)
-    if hasattr(model, "conditional_model"):
-        return ("conditional_model",)
-    if hasattr(model, "denoiser"):
-        return ("denoiser",)
-    return ()
+    runtime_spec = resolve_normality_runtime_spec(model)
+    if runtime_spec is None:
+        return ()
+    return runtime_spec.distributed_module_names
 
 
 def _wrap_module_for_distributed(
