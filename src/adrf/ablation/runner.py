@@ -10,7 +10,7 @@ from typing import Any
 import yaml
 
 from adrf.ablation.matrix import AblationMatrix
-from adrf.runner.experiment_runner import ExperimentRunner
+from adrf.runner.launching import run_experiment_with_runtime_launch
 from adrf.reporting.summary import write_ablation_summary
 from adrf.statistics.aggregate import aggregate_grouped_seed_results
 from adrf.statistics.table_export import write_grouped_paper_tables, write_paper_tables
@@ -43,11 +43,6 @@ class AblationRunner:
         started_at = datetime.now(timezone.utc).isoformat()
         continue_on_error = bool(self.matrix.config.get("continue_on_error", True))
         for spec in valid_specs:
-            runner = ExperimentRunner(
-                spec["config"],
-                output_root=self.output_root / "runs",
-                run_name=spec["name"],
-            )
             record: dict[str, Any] = {
                 "experiment_name": spec["name"],
                 "group_name": spec.get("group_name", spec["name"]),
@@ -58,20 +53,24 @@ class AblationRunner:
                 "seed": spec.get("seed"),
             }
             try:
-                results = runner.run()
+                results, run_dir, run_info = run_experiment_with_runtime_launch(
+                    spec["config"],
+                    output_root=self.output_root / "runs",
+                    run_name=spec["name"],
+                )
                 record["status"] = "completed"
                 record["metrics"] = {
                     **dict(results.get("evaluation", {})),
-                    **self._runtime_metric_payload(runner.runtime_stats),
+                    **self._runtime_metric_payload(run_info.get("runtime", {})),
                 }
-                record["budget"] = dict(runner.budget_info)
-                record["run_path"] = str(runner.run_dir) if runner.run_dir is not None else ""
+                record["budget"] = dict(run_info.get("budget", {}))
+                record["run_path"] = str(run_dir) if run_dir is not None else ""
             except Exception as exc:
                 record["status"] = "failed"
                 record["error"] = str(exc)
                 record["metrics"] = {}
-                record["budget"] = dict(getattr(runner, "budget_info", {}))
-                record["run_path"] = str(runner.run_dir) if runner.run_dir is not None else ""
+                record["budget"] = {}
+                record["run_path"] = ""
                 if not continue_on_error:
                     records.append(record)
                     break

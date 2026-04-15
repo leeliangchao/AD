@@ -43,7 +43,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return launch_distributed_experiment(launch_plan)
 
     results = ExperimentRunner(args.config).run()
-    print(json.dumps(results, indent=2, sort_keys=True))
+    if os.environ.get("RANK") in {None, "0"}:
+        print(json.dumps(results, indent=2, sort_keys=True))
     return 0
 
 

@@ -10,7 +10,7 @@ from typing import Any
 import yaml
 
 from adrf.benchmark.suite import BenchmarkSuite
-from adrf.runner.experiment_runner import ExperimentRunner
+from adrf.runner.launching import run_experiment_with_runtime_launch
 from adrf.reporting.summary import write_benchmark_summary
 
 
@@ -46,13 +46,16 @@ class BenchmarkRunner:
         records: list[dict[str, Any]] = []
         started_at = datetime.now(timezone.utc).isoformat()
         for experiment_path in self.suite.experiments:
-            runner = ExperimentRunner(experiment_path, output_root=self.output_root / "runs")
-            record = self._build_record(experiment_path, runner.config)
+            config = yaml.safe_load(Path(experiment_path).read_text(encoding="utf-8"))
+            record = self._build_record(experiment_path, config)
             try:
-                results = runner.run()
+                results, run_dir, _run_info = run_experiment_with_runtime_launch(
+                    experiment_path,
+                    output_root=self.output_root / "runs",
+                )
                 record["status"] = "completed"
                 record["metrics"] = dict(results.get("evaluation", {}))
-                record["run_path"] = str(runner.run_dir) if runner.run_dir is not None else ""
+                record["run_path"] = str(run_dir) if run_dir is not None else ""
             except Exception as exc:
                 record["status"] = "failed"
                 record["error"] = str(exc)

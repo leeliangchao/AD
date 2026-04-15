@@ -58,6 +58,37 @@ def serialize_normality_representation(
     return normalized.to_artifact_dict()
 
 
+def rehome_normality_representation(
+    representation: RepresentationOutput | Mapping[str, Any],
+    device: torch.device,
+) -> RepresentationOutput | NormalizedLegacyRepresentation:
+    normalized = normalize_normality_representation_input(representation)
+    moved_tensor = normalized.tensor.to(device)
+    if isinstance(normalized, RepresentationOutput):
+        return RepresentationOutput(
+            tensor=moved_tensor,
+            space=normalized.space,
+            spatial_shape=normalized.spatial_shape,
+            feature_dim=normalized.feature_dim,
+            sample_id=normalized.sample_id,
+            requires_grad=bool(moved_tensor.requires_grad),
+            device=str(moved_tensor.device),
+            dtype=str(moved_tensor.dtype),
+            provenance=normalized.provenance,
+        )
+    return NormalizedLegacyRepresentation(
+        tensor=moved_tensor,
+        space=normalized.space,
+        spatial_shape=normalized.spatial_shape,
+        feature_dim=normalized.feature_dim,
+        sample_id=normalized.sample_id,
+        requires_grad=bool(moved_tensor.requires_grad),
+        device=str(moved_tensor.device),
+        dtype=str(moved_tensor.dtype),
+        provenance=normalized.provenance,
+    )
+
+
 def _normalize_legacy_representation(representation: Mapping[str, Any]) -> NormalizedLegacyRepresentation:
     tensor = representation.get("tensor", representation.get("representation"))
     if not isinstance(tensor, torch.Tensor):
