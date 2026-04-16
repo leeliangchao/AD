@@ -17,6 +17,7 @@ class DiffusersNoisePredictorAdapter(nn.Module):
     def __init__(
         self,
         input_channels: int,
+        output_channels: int | None,
         hidden_channels: int,
         learning_rate: float,
         noise_level: float,
@@ -32,7 +33,7 @@ class DiffusersNoisePredictorAdapter(nn.Module):
             {
                 "sample_size": sample_size,
                 "in_channels": input_channels,
-                "out_channels": input_channels,
+                "out_channels": int(output_channels if output_channels is not None else input_channels),
                 "layers_per_block": 1,
                 "block_out_channels": (hidden_channels, hidden_channels * 2),
                 "norm_num_groups": 4,
@@ -45,12 +46,14 @@ class DiffusersNoisePredictorAdapter(nn.Module):
         self,
         clean_batch: torch.Tensor,
         *,
+        conditioning: torch.Tensor | None = None,
         class_ids: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Run one forward noise-prediction step for training."""
 
         noisy_batch, target_noise, timesteps = self._sample_noisy_inputs(clean_batch)
-        predicted_noise = self.model(noisy_batch, timesteps, class_ids=class_ids)
+        model_inputs = torch.cat([noisy_batch, conditioning], dim=1) if conditioning is not None else noisy_batch
+        predicted_noise = self.model(model_inputs, timesteps, class_ids=class_ids)
         loss = functional.mse_loss(predicted_noise, target_noise)
         return loss, target_noise
 
@@ -59,6 +62,7 @@ class DiffusersNoisePredictorAdapter(nn.Module):
         clean_image: torch.Tensor,
         *,
         target_noise: torch.Tensor | None = None,
+        conditioning: torch.Tensor | None = None,
         class_ids: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Run one forward inference step and return predicted/target noise."""
@@ -75,7 +79,8 @@ class DiffusersNoisePredictorAdapter(nn.Module):
             timesteps=timesteps,
             target_noise=target_noise,
         )
-        predicted_noise = self.model(noisy_image, timesteps, class_ids=class_ids)
+        model_inputs = torch.cat([noisy_image, conditioning], dim=1) if conditioning is not None else noisy_image
+        predicted_noise = self.model(model_inputs, timesteps, class_ids=class_ids)
         return predicted_noise, target_noise, noisy_image, timesteps
 
     def reconstruct_clean(

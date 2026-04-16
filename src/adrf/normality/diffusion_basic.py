@@ -269,6 +269,7 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
             return
         self.diffusers_adapter = DiffusersNoisePredictorAdapter(
             input_channels=self.input_channels,
+            output_channels=None,
             hidden_channels=self.base_channels,
             learning_rate=self.learning_rate,
             noise_level=self.noise_level,

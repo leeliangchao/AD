@@ -614,7 +614,7 @@ def _make_reference_diffusion_fit(model: Any):
             class_to_index=getattr(model, "class_to_index", {}),
             fit=True,
             backend=getattr(model, "backend", "legacy"),
-            supported_backends=("legacy",),
+            supported_backends=("legacy", "diffusers"),
             model_name=type(model).__name__,
         )
         paired_tensors = [
@@ -630,7 +630,12 @@ def _make_reference_diffusion_fit(model: Any):
         image_batch = torch.stack([image for image, _ in paired_tensors], dim=0)
         reference_batch = torch.stack([reference for _, reference in paired_tensors], dim=0)
 
-        optimizer = torch.optim.Adam(model.parameters(), lr=model.learning_rate)
+        if getattr(model, "backend", "legacy") == "diffusers":
+            model._ensure_diffusers_backend(sample_size=int(image_batch.shape[-1]))
+            optimizer = torch.optim.Adam(model.diffusers_adapter.parameters(), lr=model.learning_rate)
+            model.diffusers_adapter.train()
+        else:
+            optimizer = torch.optim.Adam(model.parameters(), lr=model.learning_rate)
         model.train()
         for _ in range(model.epochs):
             permutation = torch.randperm(image_batch.shape[0], device=image_batch.device)
@@ -646,14 +651,21 @@ def _make_reference_diffusion_fit(model: Any):
                     else None
                 )
                 with _autocast_context(model):
-                    noisy_batch, target_noise, timesteps = model._sample_noisy_inputs(clean_batch)
-                    conditional_inputs = torch.cat([noisy_batch, reference_slice], dim=1)
-                    predicted_noise = model.conditional_denoiser(
-                        conditional_inputs,
-                        timesteps,
-                        class_ids=batch_class_ids,
-                    )
-                    loss = functional.mse_loss(predicted_noise, target_noise)
+                    if getattr(model, "backend", "legacy") == "diffusers":
+                        loss, _ = model.diffusers_adapter.forward_train_step(
+                            clean_batch,
+                            conditioning=reference_slice,
+                            class_ids=batch_class_ids,
+                        )
+                    else:
+                        noisy_batch, target_noise, timesteps = model._sample_noisy_inputs(clean_batch)
+                        conditional_inputs = torch.cat([noisy_batch, reference_slice], dim=1)
+                        predicted_noise = model.conditional_denoiser(
+                            conditional_inputs,
+                            timesteps,
+                            class_ids=batch_class_ids,
+                        )
+                        loss = functional.mse_loss(predicted_noise, target_noise)
                 _optimizer_step(model, optimizer, loss)
                 model.last_fit_loss = float(loss.detach().cpu().item())
         model.eval()

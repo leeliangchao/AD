@@ -193,3 +193,39 @@ def test_runtime_fit_wrapper_preserves_reference_diffusion_class_conditioning_fi
     model.fit(representations, samples)
 
     assert model.class_to_index == {"bottle": 0, "capsule": 1}
+
+
+def test_runtime_fit_wrapper_preserves_reference_diffusion_diffusers_class_conditioning_fit() -> None:
+    generator = torch.Generator().manual_seed(0)
+    samples = [
+        Sample(
+            image=torch.rand(3, 16, 16, generator=generator),
+            reference=torch.rand(3, 16, 16, generator=generator),
+            sample_id="sample-001",
+            category="bottle",
+        ),
+        Sample(
+            image=torch.rand(3, 16, 16, generator=generator),
+            reference=torch.rand(3, 16, 16, generator=generator),
+            sample_id="sample-002",
+            category="capsule",
+        ),
+    ]
+    representations = [make_pixel_output(sample.image, sample_id=sample.sample_id or "sample") for sample in samples]
+    model = ReferenceDiffusionBasicNormality(
+        input_channels=3,
+        hidden_channels=8,
+        time_embed_dim=32,
+        num_train_timesteps=32,
+        learning_rate=1e-3,
+        epochs=1,
+        batch_size=2,
+        noise_level=0.2,
+        num_classes=2,
+        backend="diffusers",
+    )
+
+    _wrap_fit_for_runtime(model)
+    model.fit(representations, samples)
+
+    assert model.class_to_index == {"bottle": 0, "capsule": 1}
