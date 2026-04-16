@@ -36,3 +36,53 @@ def test_path_cost_evidence_requires_step_cost_capability() -> None:
     with pytest.raises(KeyError, match="step_costs"):
         PathCostEvidence().predict(Sample(image=torch.zeros(1, 2, 2)), artifacts)
 
+
+def test_path_cost_evidence_accepts_canonical_step_updates() -> None:
+    step_updates = [
+        torch.tensor(
+            [
+                [[1.0, 2.0], [3.0, 4.0]],
+                [[0.0, 1.0], [1.0, 0.0]],
+                [[1.0, 1.0], [1.0, 1.0]],
+            ],
+            dtype=torch.float32,
+        ),
+        torch.tensor(
+            [
+                [[0.5, 0.5], [0.5, 0.5]],
+                [[0.5, 0.5], [0.5, 0.5]],
+                [[0.5, 0.5], [0.5, 0.5]],
+            ],
+            dtype=torch.float32,
+        ),
+    ]
+    artifacts = NormalityArtifacts(
+        auxiliary={"step_updates": step_updates},
+        capabilities={"step_updates"},
+    )
+
+    prediction = PathCostEvidence(aggregator="mean").predict(Sample(image=torch.zeros(1, 2, 2)), artifacts)
+
+    assert prediction["anomaly_map"].shape == (2, 2)
+    assert isinstance(prediction["image_score"], float)
+
+
+def test_path_cost_evidence_uses_absolute_magnitude_for_step_updates() -> None:
+    step_updates = [
+        torch.tensor(
+            [
+                [[1.0, -2.0], [3.0, -4.0]],
+                [[-1.0, 2.0], [-3.0, 4.0]],
+            ],
+            dtype=torch.float32,
+        )
+    ]
+    artifacts = NormalityArtifacts(
+        auxiliary={"step_updates": step_updates},
+        capabilities={"step_updates"},
+    )
+
+    prediction = PathCostEvidence(aggregator="mean").predict(Sample(image=torch.zeros(1, 2, 2)), artifacts)
+
+    expected_map = torch.tensor([[1.0, 2.0], [3.0, 4.0]], dtype=torch.float32)
+    assert torch.allclose(prediction["anomaly_map"], expected_map)

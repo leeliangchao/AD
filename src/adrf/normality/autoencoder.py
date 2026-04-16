@@ -12,8 +12,8 @@ from torch import nn
 
 from adrf.core.artifacts import NormalityArtifacts
 from adrf.core.sample import Sample
-from adrf.normality.diffusion_basic import _normalize_channel_mults
 from adrf.normality.base import BaseNormalityModel
+from adrf.normality.diffusion_core import normalize_channel_mults
 from adrf.normality.state import install_normality_runtime_state, make_default_normality_runtime_state
 from adrf.representation.contracts import RepresentationOutput
 
@@ -74,7 +74,7 @@ class AutoEncoderNormality(nn.Module, BaseNormalityModel):
         self.batch_size = batch_size
         self.base_channels = resolved_base_channels
         self.hidden_channels = resolved_base_channels
-        self.channel_mults = _normalize_channel_mults(channel_mults)
+        self.channel_mults = normalize_channel_mults(channel_mults)
         self.latent_channels = int(latent_channels)
         self.num_blocks_per_stage = int(num_blocks_per_stage)
 

@@ -499,12 +499,23 @@ def _make_diffusion_fit(model: Any):
     """Create a runtime-aware fit function for DiffusionBasicNormality."""
 
     def fit(representations, samples=None):
-        del samples
+        from adrf.normality.diffusion_conditioning import resolve_optional_class_ids
+
+        sample_list = list(samples) if samples is not None else None
         tensors = [model.require_representation_tensor(representation).float() for representation in representations]
         if not tensors:
             raise ValueError("DiffusionBasicNormality.fit requires at least one representation.")
 
         train_batch = torch.stack(tensors, dim=0)
+        train_class_ids = resolve_optional_class_ids(
+            sample_list,
+            num_classes=getattr(model, "num_classes", None),
+            class_to_index=getattr(model, "class_to_index", {}),
+            fit=True,
+            backend=getattr(model, "backend", "legacy"),
+            supported_backends=("legacy", "diffusers"),
+            model_name=type(model).__name__,
+        )
         if getattr(model, "backend", "legacy") == "diffusers":
             model._ensure_diffusers_backend(sample_size=int(train_batch.shape[-1]))
             optimizer = torch.optim.Adam(model.diffusers_adapter.parameters(), lr=model.learning_rate)
@@ -515,16 +526,27 @@ def _make_diffusion_fit(model: Any):
         for _ in range(model.epochs):
             permutation = torch.randperm(train_batch.shape[0], device=train_batch.device)
             shuffled = train_batch[permutation]
+            shuffled_class_ids = train_class_ids[permutation] if train_class_ids is not None else None
             for start in range(0, shuffled.shape[0], model.batch_size):
                 clean_batch = shuffled[start : start + model.batch_size]
+                batch_class_ids = (
+                    shuffled_class_ids[start : start + model.batch_size].to(device=clean_batch.device)
+                    if shuffled_class_ids is not None
+                    else None
+                )
                 with _autocast_context(model):
                     if getattr(model, "backend", "legacy") == "diffusers":
-                        loss, _ = model.diffusers_adapter.forward_train_step(clean_batch)
+                        loss, _ = model.diffusers_adapter.forward_train_step(clean_batch, class_ids=batch_class_ids)
                     else:
                         sampled = model._sample_noisy_inputs(clean_batch)
                         if len(sampled) == 4:
                             noisy_batch, target_noise, timesteps, noise_scales = sampled
-                            predicted_noise = model.denoiser(noisy_batch, timesteps, noise_scales)
+                            predicted_noise = model.denoiser(
+                                noisy_batch,
+                                timesteps,
+                                noise_scales,
+                                class_ids=batch_class_ids,
+                            )
                         else:
                             noisy_batch, target_noise, timesteps = sampled
                             predicted_noise = model.denoiser(noisy_batch, timesteps)
@@ -580,15 +602,27 @@ def _make_reference_diffusion_fit(model: Any):
     """Create a runtime-aware fit function for ReferenceDiffusionBasicNormality."""
 
     def fit(representations, samples=None):
+        from adrf.normality.diffusion_conditioning import resolve_optional_class_ids
+
         if samples is None:
             raise ValueError("ReferenceDiffusionBasicNormality.fit requires samples with reference inputs.")
 
+        sample_list = list(samples)
+        class_ids = resolve_optional_class_ids(
+            sample_list,
+            num_classes=getattr(model, "num_classes", None),
+            class_to_index=getattr(model, "class_to_index", {}),
+            fit=True,
+            backend=getattr(model, "backend", "legacy"),
+            supported_backends=("legacy", "diffusers"),
+            model_name=type(model).__name__,
+        )
         paired_tensors = [
             (
                 model.require_representation_tensor(representation).float(),
                 model._prepare_reference_tensor(sample, representation).float(),
             )
-            for representation, sample in zip(representations, samples, strict=True)
+            for representation, sample in zip(representations, sample_list, strict=True)
         ]
         if not paired_tensors:
             raise ValueError("ReferenceDiffusionBasicNormality.fit requires at least one representation.")
@@ -596,20 +630,42 @@ def _make_reference_diffusion_fit(model: Any):
         image_batch = torch.stack([image for image, _ in paired_tensors], dim=0)
         reference_batch = torch.stack([reference for _, reference in paired_tensors], dim=0)
 
-        optimizer = torch.optim.Adam(model.parameters(), lr=model.learning_rate)
+        if getattr(model, "backend", "legacy") == "diffusers":
+            model._ensure_diffusers_backend(sample_size=int(image_batch.shape[-1]))
+            optimizer = torch.optim.Adam(model.diffusers_adapter.parameters(), lr=model.learning_rate)
+            model.diffusers_adapter.train()
+        else:
+            optimizer = torch.optim.Adam(model.parameters(), lr=model.learning_rate)
         model.train()
         for _ in range(model.epochs):
             permutation = torch.randperm(image_batch.shape[0], device=image_batch.device)
             shuffled_images = image_batch[permutation]
             shuffled_references = reference_batch[permutation]
+            shuffled_class_ids = class_ids[permutation] if class_ids is not None else None
             for start in range(0, shuffled_images.shape[0], model.batch_size):
                 clean_batch = shuffled_images[start : start + model.batch_size]
                 reference_slice = shuffled_references[start : start + model.batch_size]
+                batch_class_ids = (
+                    shuffled_class_ids[start : start + model.batch_size].to(device=clean_batch.device)
+                    if shuffled_class_ids is not None
+                    else None
+                )
                 with _autocast_context(model):
-                    noisy_batch, target_noise, timesteps = model._sample_noisy_inputs(clean_batch)
-                    conditional_inputs = torch.cat([noisy_batch, reference_slice], dim=1)
-                    predicted_noise = model.conditional_denoiser(conditional_inputs, timesteps)
-                    loss = functional.mse_loss(predicted_noise, target_noise)
+                    if getattr(model, "backend", "legacy") == "diffusers":
+                        loss, _ = model.diffusers_adapter.forward_train_step(
+                            clean_batch,
+                            conditioning=reference_slice,
+                            class_ids=batch_class_ids,
+                        )
+                    else:
+                        noisy_batch, target_noise, timesteps = model._sample_noisy_inputs(clean_batch)
+                        conditional_inputs = torch.cat([noisy_batch, reference_slice], dim=1)
+                        predicted_noise = model.conditional_denoiser(
+                            conditional_inputs,
+                            timesteps,
+                            class_ids=batch_class_ids,
+                        )
+                        loss = functional.mse_loss(predicted_noise, target_noise)
                 _optimizer_step(model, optimizer, loss)
                 model.last_fit_loss = float(loss.detach().cpu().item())
         model.eval()

@@ -6,6 +6,7 @@ import sys
 from typing import get_type_hints
 
 from PIL import Image
+import pytest
 import torch
 
 from adrf.core.sample import Sample
@@ -65,12 +66,15 @@ def test_reference_diffusion_basic_fit_and_infer_accept_representation_output() 
     predicted_noise = artifacts.get_aux("predicted_noise")
     target_noise = artifacts.get_aux("target_noise")
     reference_projection = artifacts.get_primary("reference_projection")
+    reconstruction = artifacts.get_primary("reconstruction")
     conditional_alignment = artifacts.get_aux("conditional_alignment")
     assert isinstance(predicted_noise, torch.Tensor)
     assert isinstance(target_noise, torch.Tensor)
     assert isinstance(reference_projection, torch.Tensor)
+    assert isinstance(reconstruction, torch.Tensor)
     assert isinstance(conditional_alignment, torch.Tensor)
     assert predicted_noise.shape == target_noise.shape == (3, 16, 16)
+    assert reconstruction.shape == (3, 16, 16)
     assert reference_projection.shape == (3, 16, 16)
     assert conditional_alignment.shape == (16, 16)
     assert artifacts.get_diag("time_embed_dim") == 32
@@ -80,6 +84,38 @@ def test_reference_diffusion_basic_fit_and_infer_accept_representation_output() 
     assert artifacts.representation["sample_id"] == "sample-001"
     assert ReferenceDiffusionBasicNormality.accepted_spaces == frozenset({"pixel"})
     assert ReferenceDiffusionBasicNormality.accepted_tensor_ranks == frozenset({3})
+
+
+def test_reference_diffusion_artifacts_flow_into_reconstruction_residual_evidence() -> None:
+    generator = torch.Generator().manual_seed(0)
+    samples = [
+        Sample(
+            image=torch.rand(3, 16, 16, generator=generator),
+            reference=torch.rand(3, 16, 16, generator=generator),
+            sample_id="sample-001",
+        )
+    ]
+    representations = [make_pixel_output(samples[0].image, sample_id=samples[0].sample_id or "sample")]
+    model = ReferenceDiffusionBasicNormality(
+        input_channels=3,
+        hidden_channels=8,
+        time_embed_dim=32,
+        num_train_timesteps=32,
+        learning_rate=1e-3,
+        epochs=1,
+        batch_size=1,
+        noise_level=0.2,
+    )
+    model.fit(representations, samples)
+
+    artifacts = model.infer(samples[0], representations[0])
+
+    from adrf.evidence.reconstruction_residual import ReconstructionResidualEvidence
+
+    prediction = ReconstructionResidualEvidence(aggregator="mean").predict(samples[0], artifacts)
+
+    assert prediction["anomaly_map"].shape == (16, 16)
+    assert isinstance(prediction["image_score"], float)
 
 
 def test_reference_diffusion_infer_is_deterministic_for_the_same_sample() -> None:
@@ -110,6 +146,112 @@ def test_reference_diffusion_infer_is_deterministic_for_the_same_sample() -> Non
     assert torch.allclose(first.get_aux("predicted_noise"), second.get_aux("predicted_noise"))
     assert torch.allclose(first.get_aux("target_noise"), second.get_aux("target_noise"))
     assert torch.allclose(first.get_primary("reference_projection"), second.get_primary("reference_projection"))
+
+
+def test_reference_diffusion_supports_optional_class_conditioning_on_legacy_backend() -> None:
+    generator = torch.Generator().manual_seed(0)
+    samples = [
+        Sample(
+            image=torch.rand(3, 16, 16, generator=generator),
+            reference=torch.rand(3, 16, 16, generator=generator),
+            sample_id="sample-001",
+            category="bottle",
+        ),
+        Sample(
+            image=torch.rand(3, 16, 16, generator=generator),
+            reference=torch.rand(3, 16, 16, generator=generator),
+            sample_id="sample-002",
+            category="capsule",
+        ),
+    ]
+    representations = [make_pixel_output(sample.image, sample_id=sample.sample_id or "sample") for sample in samples]
+    model = ReferenceDiffusionBasicNormality(
+        input_channels=3,
+        hidden_channels=8,
+        time_embed_dim=32,
+        num_train_timesteps=32,
+        learning_rate=1e-3,
+        epochs=1,
+        batch_size=2,
+        noise_level=0.2,
+        num_classes=2,
+    )
+
+    model.fit(representations, samples)
+    artifacts = model.infer(samples[0], representations[0])
+
+    assert artifacts.get_primary("reference_projection").shape == (3, 16, 16)
+
+
+def test_reference_diffusion_supports_diffusers_backend() -> None:
+    generator = torch.Generator().manual_seed(0)
+    samples = [
+        Sample(
+            image=torch.rand(3, 16, 16, generator=generator),
+            reference=torch.rand(3, 16, 16, generator=generator),
+            sample_id="sample-001",
+        ),
+        Sample(
+            image=torch.rand(3, 16, 16, generator=generator),
+            reference=torch.rand(3, 16, 16, generator=generator),
+            sample_id="sample-002",
+        ),
+    ]
+    representations = [make_pixel_output(sample.image, sample_id=sample.sample_id or "sample") for sample in samples]
+    model = ReferenceDiffusionBasicNormality(
+        input_channels=3,
+        hidden_channels=8,
+        time_embed_dim=32,
+        num_train_timesteps=32,
+        learning_rate=1e-3,
+        epochs=1,
+        batch_size=2,
+        noise_level=0.2,
+        backend="diffusers",
+    )
+
+    model.fit(representations, samples)
+    artifacts = model.infer(samples[0], representations[0])
+
+    assert artifacts.get_primary("reference_projection").shape == (3, 16, 16)
+    assert artifacts.get_primary("reconstruction").shape == (3, 16, 16)
+
+
+def test_reference_diffusion_diffusers_backend_supports_optional_class_conditioning() -> None:
+    generator = torch.Generator().manual_seed(0)
+    samples = [
+        Sample(
+            image=torch.rand(3, 16, 16, generator=generator),
+            reference=torch.rand(3, 16, 16, generator=generator),
+            sample_id="sample-001",
+            category="bottle",
+        ),
+        Sample(
+            image=torch.rand(3, 16, 16, generator=generator),
+            reference=torch.rand(3, 16, 16, generator=generator),
+            sample_id="sample-002",
+            category="capsule",
+        ),
+    ]
+    representations = [make_pixel_output(sample.image, sample_id=sample.sample_id or "sample") for sample in samples]
+    model = ReferenceDiffusionBasicNormality(
+        input_channels=3,
+        hidden_channels=8,
+        time_embed_dim=32,
+        num_train_timesteps=32,
+        learning_rate=1e-3,
+        epochs=1,
+        batch_size=2,
+        noise_level=0.2,
+        num_classes=2,
+        backend="diffusers",
+    )
+
+    model.fit(representations, samples)
+    artifacts = model.infer(samples[0], representations[0])
+
+    assert model.class_to_index == {"bottle": 0, "capsule": 1}
+    assert artifacts.get_primary("reference_projection").shape == (3, 16, 16)
 
 
 def test_reference_diffusion_basic_accepts_pil_reference_fallback() -> None:

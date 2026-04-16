@@ -9,12 +9,13 @@ import torch
 from adrf.core.artifacts import NormalityArtifacts
 from adrf.core.sample import Sample
 from adrf.evidence.base import BaseEvidenceModel
+from adrf.evidence.diffusion_scorers import score_direction_mismatch_from_step_updates
 
 
 class DirectionMismatchEvidence(BaseEvidenceModel):
     """Convert trajectory step differences into anomaly evidence."""
 
-    required_capabilities = {"trajectory"}
+    required_capabilities = set()
 
     def __init__(self, aggregator: str = "max", direction_reduce: str = "sum") -> None:
         super().__init__(aggregator=aggregator)
@@ -26,6 +27,33 @@ class DirectionMismatchEvidence(BaseEvidenceModel):
         """Build anomaly evidence from trajectory-only process artifacts."""
 
         del sample
+        transitions = self._resolve_transitions(artifacts)
+        anomaly_map = score_direction_mismatch_from_step_updates(
+            transitions,
+            direction_reduce=self.direction_reduce,
+        )
+
+        return self.build_prediction(
+            anomaly_map,
+            aux_scores={"num_steps": len(transitions) + 1},
+        )
+
+    def _resolve_transitions(self, artifacts: NormalityArtifacts) -> list[torch.Tensor]:
+        """Resolve canonical step updates first, then fall back to trajectory differences."""
+
+        raw_step_updates = artifacts.get_aux("step_updates")
+        if isinstance(raw_step_updates, list) and raw_step_updates:
+            updates = []
+            for update in raw_step_updates:
+                if not isinstance(update, torch.Tensor):
+                    raise TypeError("Each step update must be a torch.Tensor.")
+                updates.append(update.float())
+            if len(updates) < 2:
+                raise ValueError("DirectionMismatchEvidence requires at least two step updates.")
+            return updates
+
+        if not artifacts.has("trajectory"):
+            raise KeyError("Missing required capabilities: trajectory")
         self.ensure_required_capabilities(artifacts)
         trajectory = artifacts.get_aux("trajectory")
         if not isinstance(trajectory, list) or not trajectory:
@@ -40,33 +68,4 @@ class DirectionMismatchEvidence(BaseEvidenceModel):
             if previous_state.shape != current_state.shape:
                 raise ValueError("All trajectory states must share the same shape.")
             transitions.append(current_state.float() - previous_state.float())
-
-        mismatch_maps = []
-        for previous_delta, current_delta in zip(transitions[:-1], transitions[1:], strict=True):
-            # Penalize per-pixel sign reversals between consecutive trajectory steps.
-            reversal = torch.relu(-(previous_delta * current_delta))
-            mismatch_maps.append(self._reduce_channels(reversal))
-
-        if not mismatch_maps:
-            anomaly_map = torch.zeros_like(self._reduce_channels(transitions[0]))
-        else:
-            stacked = torch.stack(mismatch_maps, dim=0)
-            if self.direction_reduce == "sum":
-                anomaly_map = stacked.sum(dim=0)
-            else:
-                anomaly_map = stacked.mean(dim=0)
-
-        return self.build_prediction(
-            anomaly_map,
-            aux_scores={"num_steps": len(trajectory)},
-        )
-
-    @staticmethod
-    def _reduce_channels(tensor: torch.Tensor) -> torch.Tensor:
-        """Reduce a trajectory difference tensor into a 2D map."""
-
-        if tensor.ndim == 3:
-            return tensor.mean(dim=0)
-        if tensor.ndim == 2:
-            return tensor
-        raise ValueError("Trajectory states must be 2D or 3D tensors.")
+        return transitions
