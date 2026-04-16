@@ -14,8 +14,8 @@ from torchvision.transforms import functional as tv_functional
 
 from adrf.core.artifacts import NormalityArtifacts
 from adrf.core.sample import Sample
-from adrf.normality.diffusion_basic import _ResidualConvBlock
 from adrf.normality.diffusion_core import normalize_channel_mults
+from adrf.normality.diffusion_models import ResidualConvBlock
 from adrf.normality.base import BaseNormalityModel
 from adrf.normality.state import install_normality_runtime_state, make_default_normality_runtime_state
 from adrf.representation.contracts import RepresentationOutput
@@ -40,10 +40,10 @@ class _ConditionalProjector(nn.Module):
         current_channels = base_channels + condition_channels
         for multiplier in channel_mults:
             stage_channels = base_channels * int(multiplier)
-            layers.append(_ResidualConvBlock(current_channels, stage_channels))
+            layers.append(ResidualConvBlock(current_channels, stage_channels))
             current_channels = stage_channels
             for _ in range(num_res_blocks - 1):
-                layers.append(_ResidualConvBlock(current_channels, current_channels))
+                layers.append(ResidualConvBlock(current_channels, current_channels))
         self.backbone = nn.Sequential(*layers)
         self.output_projection = nn.Conv2d(current_channels, input_channels, kernel_size=3, padding=1)
 

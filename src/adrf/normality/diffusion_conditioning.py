@@ -7,6 +7,8 @@ from typing import Any
 
 import torch
 
+from adrf.core.sample import Sample
+
 
 @dataclass(slots=True)
 class DiffusionConditioning:
@@ -44,3 +46,33 @@ def combine_conditioning(*conditionings: DiffusionConditioning) -> DiffusionCond
             class_ids = conditioning.class_ids
         metadata.update(conditioning.metadata)
     return DiffusionConditioning(reference=reference, class_ids=class_ids, metadata=metadata)
+
+
+def resolve_class_ids_from_samples(
+    samples: list[Sample],
+    *,
+    num_classes: int,
+    class_to_index: dict[str, int],
+    fit: bool,
+) -> torch.Tensor:
+    """Resolve class ids from metadata or category strings, updating the mapping during fit."""
+
+    indices: list[int] = []
+    for sample in samples:
+        metadata_class_id = sample.metadata.get("class_id")
+        if isinstance(metadata_class_id, int):
+            class_id = metadata_class_id
+        elif sample.category is not None:
+            if sample.category not in class_to_index:
+                if not fit:
+                    raise ValueError(f"Unknown category `{sample.category}` for class-conditioned diffusion inference.")
+                if len(class_to_index) >= num_classes:
+                    raise ValueError("Observed more categories than configured num_classes.")
+                class_to_index[sample.category] = len(class_to_index)
+            class_id = class_to_index[sample.category]
+        else:
+            raise ValueError("Class-conditioned diffusion requires `sample.metadata['class_id']` or `sample.category`.")
+        if not 0 <= class_id < num_classes:
+            raise ValueError(f"class_id={class_id} is outside configured range [0, {num_classes}).")
+        indices.append(class_id)
+    return torch.tensor(indices, dtype=torch.long)

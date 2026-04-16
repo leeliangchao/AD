@@ -9,6 +9,7 @@ import torch
 from adrf.core.artifacts import NormalityArtifacts
 from adrf.core.sample import Sample
 from adrf.normality.diffusion_basic import DiffusionBasicNormality
+from adrf.normality.diffusion_conditioning import resolve_class_ids_from_samples
 from adrf.normality.diffusion_core import deterministic_noise_like, run_legacy_reverse_rollout
 from adrf.normality.diffusion_tasks import build_trajectory_artifacts
 from adrf.representation.contracts import RepresentationOutput
@@ -35,6 +36,8 @@ class DiffusionInversionBasicNormality(DiffusionBasicNormality):
         epochs: int = 1,
         batch_size: int = 8,
         noise_level: float = 0.2,
+        num_classes: int | None = None,
+        class_embed_dim: int | None = None,
         num_steps: int = 4,
         step_size: float = 0.1,
         initial_noise_scale: float | None = None,
@@ -55,6 +58,8 @@ class DiffusionInversionBasicNormality(DiffusionBasicNormality):
             epochs=epochs,
             batch_size=batch_size,
             noise_level=noise_level,
+            num_classes=num_classes,
+            class_embed_dim=class_embed_dim,
             backend=backend,
         )
         if num_steps < 1:
@@ -82,11 +87,23 @@ class DiffusionInversionBasicNormality(DiffusionBasicNormality):
 
         inference_identity = sample.sample_id or representation.sample_id or "inference"
         current_state = self._initial_state(representation, identity=inference_identity)
+        class_ids = (
+            resolve_class_ids_from_samples(
+                [sample],
+                num_classes=self.num_classes,
+                class_to_index=self.class_to_index,
+                fit=False,
+            ).to(device=current_state.device)
+            if self.num_classes is not None
+            else None
+        )
 
         with torch.no_grad():
             rollout_timesteps = self._rollout_timesteps(current_state.device)
             rollout_scales = self._noise_scale_from_timesteps(rollout_timesteps)
             if self.backend == "diffusers":
+                if self.num_classes is not None:
+                    raise NotImplementedError("Class-conditioned diffusers backend is not implemented yet.")
                 self._ensure_diffusers_backend(sample_size=int(current_state.shape[-1]))
 
                 def predict_noise_fn(state: torch.Tensor, timestep_batch: torch.Tensor, _noise_scale: torch.Tensor) -> torch.Tensor:
@@ -94,7 +111,9 @@ class DiffusionInversionBasicNormality(DiffusionBasicNormality):
             else:
 
                 def predict_noise_fn(state: torch.Tensor, timestep_batch: torch.Tensor, noise_scale: torch.Tensor) -> torch.Tensor:
-                    return self.denoiser(state, timestep_batch, noise_scale)
+                    if class_ids is None:
+                        return self.denoiser(state, timestep_batch, noise_scale)
+                    return self.denoiser(state, timestep_batch, noise_scale, class_ids=class_ids)
 
             reconstruction, trajectory, step_updates, step_costs = run_legacy_reverse_rollout(
                 current_state,

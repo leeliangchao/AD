@@ -143,3 +143,30 @@ def test_diffusion_inversion_artifacts_flow_into_reconstruction_residual_evidenc
 
     assert prediction["anomaly_map"].shape == (16, 16)
     assert isinstance(prediction["image_score"], float)
+
+
+def test_diffusion_inversion_supports_optional_class_conditioning_on_legacy_backend() -> None:
+    generator = torch.Generator().manual_seed(0)
+    samples = [
+        Sample(image=torch.rand(3, 16, 16, generator=generator), sample_id="train-000", category="bottle"),
+        Sample(image=torch.rand(3, 16, 16, generator=generator), sample_id="train-001", category="capsule"),
+    ]
+    representations = [make_pixel_output(sample.image, sample_id=sample.sample_id or "sample") for sample in samples]
+    model = DiffusionInversionBasicNormality(
+        input_channels=3,
+        hidden_channels=8,
+        time_embed_dim=32,
+        num_train_timesteps=32,
+        learning_rate=1e-3,
+        epochs=1,
+        batch_size=2,
+        noise_level=0.2,
+        num_steps=4,
+        step_size=0.1,
+        num_classes=2,
+    )
+
+    model.fit(representations, samples)
+    artifacts = model.infer(samples[0], representations[0])
+
+    assert artifacts.get_primary("reconstruction").shape == (3, 16, 16)
