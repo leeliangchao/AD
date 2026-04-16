@@ -22,6 +22,7 @@ from adrf.normality.diffusion_core import (
     normalize_channel_mults,
     sinusoidal_timestep_embedding,
 )
+from adrf.normality.diffusion_tasks import build_reconstruction_artifacts
 from adrf.normality.state import install_normality_runtime_state, make_default_normality_runtime_state
 from adrf.representation.contracts import RepresentationOutput
 
@@ -281,20 +282,13 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
                 predicted_noise = self.denoiser(noisy_image, timesteps, noise_scales)
                 reconstruction = legacy_reconstruct_clean(noisy_image, predicted_noise, noise_scales)
                 inference_timestep = int(timesteps[0].item())
-        return NormalityArtifacts(
-            context={
-                "sample_id": sample.sample_id,
-                "category": sample.category,
-                "mode": "inference",
-            },
+        return build_reconstruction_artifacts(
+            sample_id=sample.sample_id,
+            category=sample.category,
             representation=self.serialize_representation(representation),
-            primary={
-                "reconstruction": reconstruction.squeeze(0),
-            },
-            auxiliary={
-                "predicted_noise": predicted_noise.squeeze(0),
-                "target_noise": target_noise.squeeze(0),
-            },
+            reconstruction=reconstruction.squeeze(0),
+            predicted_noise=predicted_noise.squeeze(0),
+            target_noise=target_noise.squeeze(0),
             diagnostics={
                 "fit_loss": self.last_fit_loss,
                 "noise_level": self.noise_level,
@@ -303,7 +297,6 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
                 "num_train_timesteps": self.num_train_timesteps,
                 "inference_timestep": inference_timestep,
             },
-            capabilities={"predicted_noise", "target_noise"},
         )
 
     def _sample_noisy_inputs(

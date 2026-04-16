@@ -23,6 +23,7 @@ from adrf.normality.diffusion_core import (
     normalize_channel_mults,
     sinusoidal_timestep_embedding,
 )
+from adrf.normality.diffusion_tasks import build_conditional_reconstruction_artifacts
 from adrf.normality.base import BaseNormalityModel
 from adrf.normality.state import install_normality_runtime_state, make_default_normality_runtime_state
 from adrf.representation.contracts import RepresentationOutput
@@ -210,35 +211,21 @@ class ReferenceDiffusionBasicNormality(nn.Module, BaseNormalityModel):
             reference_projection = reconstruction
         conditional_alignment = torch.abs(reference_projection - reference).mean(dim=1).squeeze(0)
 
-        return NormalityArtifacts(
-            context={
-                "sample_id": sample.sample_id,
-                "category": sample.category,
-                "has_reference": sample.has_reference(),
-                "mode": "inference",
-            },
+        return build_conditional_reconstruction_artifacts(
+            sample_id=sample.sample_id,
+            category=sample.category,
             representation=self.serialize_representation(representation),
-            primary={
-                "reconstruction": reconstruction.squeeze(0),
-                "reference_projection": reference_projection.squeeze(0),
-            },
-            auxiliary={
-                "predicted_noise": predicted_noise.squeeze(0),
-                "target_noise": target_noise.squeeze(0),
-                "conditional_alignment": conditional_alignment,
-            },
+            reconstruction=reconstruction.squeeze(0),
+            reference_projection=reference_projection.squeeze(0),
+            predicted_noise=predicted_noise.squeeze(0),
+            target_noise=target_noise.squeeze(0),
+            conditional_alignment=conditional_alignment,
             diagnostics={
                 "fit_loss": self.last_fit_loss,
                 "noise_level": self.noise_level,
                 "time_embed_dim": self.time_embed_dim,
                 "num_train_timesteps": self.num_train_timesteps,
                 "inference_timestep": int(timesteps[0].item()),
-            },
-            capabilities={
-                "predicted_noise",
-                "target_noise",
-                "reference_projection",
-                "conditional_alignment",
             },
         )
 

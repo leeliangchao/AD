@@ -10,6 +10,7 @@ from adrf.core.artifacts import NormalityArtifacts
 from adrf.core.sample import Sample
 from adrf.normality.diffusion_basic import DiffusionBasicNormality
 from adrf.normality.diffusion_core import deterministic_noise_like, run_legacy_reverse_rollout
+from adrf.normality.diffusion_tasks import build_trajectory_artifacts
 from adrf.representation.contracts import RepresentationOutput
 
 
@@ -106,21 +107,14 @@ class DiffusionInversionBasicNormality(DiffusionBasicNormality):
             )
 
         final_state = reconstruction.squeeze(0)
-        return NormalityArtifacts(
-            context={
-                "sample_id": sample.sample_id,
-                "category": sample.category,
-                "mode": "inference",
-            },
+        return build_trajectory_artifacts(
+            sample_id=sample.sample_id,
+            category=sample.category,
             representation=self.serialize_representation(representation),
-            primary={
-                "reconstruction": final_state,
-            },
-            auxiliary={
-                "trajectory": trajectory,
-                "step_updates": step_updates,
-                "step_costs": step_costs,
-            },
+            reconstruction=final_state,
+            trajectory=trajectory,
+            step_updates=step_updates,
+            step_costs=step_costs,
             diagnostics={
                 "fit_loss": self.last_fit_loss,
                 "num_steps": self.num_steps,
@@ -136,7 +130,6 @@ class DiffusionInversionBasicNormality(DiffusionBasicNormality):
                     "last_step_cost_mean": float(step_costs[-1].mean().item()),
                 },
             },
-            capabilities={"trajectory", "step_costs"},
         )
 
     def _initial_state(self, representation: RepresentationOutput, *, identity: object | None = None) -> torch.Tensor:
