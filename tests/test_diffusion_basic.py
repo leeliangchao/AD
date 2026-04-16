@@ -143,3 +143,12 @@ def test_diffusion_basic_supports_optional_class_conditioning_on_legacy_backend(
     artifacts = model.infer(samples[0], representations[0])
 
     assert artifacts.get_primary("reconstruction").shape == (3, 16, 16)
+
+
+def test_diffusion_basic_rejects_unknown_backend_early() -> None:
+    try:
+        DiffusionBasicNormality(backend="unknown")
+    except ValueError as error:
+        assert "Unsupported diffusion backend" in str(error)
+    else:
+        raise AssertionError("DiffusionBasicNormality should reject unknown backends at construction time.")

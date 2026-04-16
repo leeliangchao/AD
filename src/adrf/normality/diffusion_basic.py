@@ -21,6 +21,7 @@ from adrf.normality.diffusion_core import (
     legacy_reconstruct_clean,
     normalize_channel_mults,
     sample_legacy_noisy_inputs,
+    validate_diffusion_backend,
 )
 from adrf.normality.diffusion_conditioning import resolve_optional_class_ids
 from adrf.normality.diffusion_models import ConditionedResidualConvBlock, NoisePredictor, ResidualConvBlock
@@ -74,7 +75,11 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
         self.noise_level = noise_level
         self.num_classes = int(num_classes) if num_classes is not None else None
         self.class_embed_dim = int(class_embed_dim) if class_embed_dim is not None else None
-        self.backend = backend
+        self.backend = validate_diffusion_backend(
+            backend,
+            supported_backends=("legacy", "diffusers"),
+            model_name=type(self).__name__,
+        )
         self.base_channels = resolved_base_channels
         self.hidden_channels = resolved_base_channels
         self.channel_mults = normalize_channel_mults(channel_mults)

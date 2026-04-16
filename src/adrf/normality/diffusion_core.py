@@ -24,6 +24,22 @@ def normalize_channel_mults(
     return normalized
 
 
+def validate_diffusion_backend(
+    backend: str,
+    *,
+    supported_backends: Sequence[str],
+    model_name: str,
+) -> str:
+    """Validate one diffusion backend string against the supported set."""
+
+    normalized = str(backend).strip().lower()
+    supported = tuple(str(value).strip().lower() for value in supported_backends)
+    if normalized not in supported:
+        supported_text = ", ".join(supported)
+        raise ValueError(f"Unsupported diffusion backend `{backend}` for {model_name}. Supported backends: {supported_text}.")
+    return normalized
+
+
 def deterministic_noise_like(tensor: torch.Tensor, *identity_parts: object) -> torch.Tensor:
     """Sample deterministic Gaussian noise from a stable identity tuple."""
 
