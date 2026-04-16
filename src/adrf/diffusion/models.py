@@ -16,10 +16,16 @@ class DiffusersUNetAdapter(nn.Module):
         super().__init__()
         self.model = model
 
-    def forward(self, sample: torch.Tensor, timesteps: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        sample: torch.Tensor,
+        timesteps: torch.Tensor,
+        *,
+        class_ids: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         """Run the wrapped UNet and return only the predicted tensor."""
 
-        return self.model(sample, timesteps).sample
+        return self.model(sample, timesteps, class_labels=class_ids).sample
 
 
 def make_unet_model(config: dict[str, Any]) -> DiffusersUNetAdapter:
@@ -34,5 +40,10 @@ def make_unet_model(config: dict[str, Any]) -> DiffusersUNetAdapter:
         down_block_types=tuple(config.get("down_block_types", ("DownBlock2D", "DownBlock2D"))),
         up_block_types=tuple(config.get("up_block_types", ("UpBlock2D", "UpBlock2D"))),
         norm_num_groups=int(config.get("norm_num_groups", 4)),
+        num_class_embeds=(
+            int(config["num_class_embeds"])
+            if config.get("num_class_embeds") is not None
+            else None
+        ),
     )
     return DiffusersUNetAdapter(model)

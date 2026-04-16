@@ -3,7 +3,6 @@
 from pathlib import Path
 import sys
 
-import pytest
 import torch
 
 from adrf.core.sample import Sample
@@ -96,7 +95,7 @@ def test_diffusion_basic_diffusers_backend_infer_does_not_sample_random_timestep
     assert artifacts.has("predicted_noise")
 
 
-def test_diffusion_basic_diffusers_backend_rejects_class_conditioning_explicitly() -> None:
+def test_diffusion_basic_diffusers_backend_supports_optional_class_conditioning() -> None:
     generator = torch.Generator().manual_seed(0)
     samples = [
         Sample(image=torch.rand(3, 16, 16, generator=generator), sample_id="train-000", category="bottle"),
@@ -115,5 +114,8 @@ def test_diffusion_basic_diffusers_backend_rejects_class_conditioning_explicitly
         num_classes=2,
     )
 
-    with pytest.raises(NotImplementedError, match="Class-conditioned diffusers backend"):
-        model.fit(train_representations, samples)
+    model.fit(train_representations, samples)
+    artifacts = model.infer(samples[0], train_representations[0])
+
+    assert model.class_to_index == {"bottle": 0, "capsule": 1}
+    assert artifacts.get_primary("reconstruction").shape == (3, 16, 16)

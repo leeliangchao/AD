@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-from typing import Any
-
 import torch
 import torch.nn.functional as functional
 from torch import nn
@@ -25,6 +22,7 @@ class DiffusersNoisePredictorAdapter(nn.Module):
         noise_level: float,
         sample_size: int,
         num_train_timesteps: int,
+        num_classes: int | None = None,
     ) -> None:
         super().__init__()
         self.learning_rate = learning_rate
@@ -38,15 +36,21 @@ class DiffusersNoisePredictorAdapter(nn.Module):
                 "layers_per_block": 1,
                 "block_out_channels": (hidden_channels, hidden_channels * 2),
                 "norm_num_groups": 4,
+                "num_class_embeds": num_classes,
             }
         )
         install_normality_runtime_state(self, make_default_normality_runtime_state())
 
-    def forward_train_step(self, clean_batch: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def forward_train_step(
+        self,
+        clean_batch: torch.Tensor,
+        *,
+        class_ids: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Run one forward noise-prediction step for training."""
 
         noisy_batch, target_noise, timesteps = self._sample_noisy_inputs(clean_batch)
-        predicted_noise = self.model(noisy_batch, timesteps)
+        predicted_noise = self.model(noisy_batch, timesteps, class_ids=class_ids)
         loss = functional.mse_loss(predicted_noise, target_noise)
         return loss, target_noise
 
@@ -55,6 +59,7 @@ class DiffusersNoisePredictorAdapter(nn.Module):
         clean_image: torch.Tensor,
         *,
         target_noise: torch.Tensor | None = None,
+        class_ids: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Run one forward inference step and return predicted/target noise."""
 
@@ -70,7 +75,7 @@ class DiffusersNoisePredictorAdapter(nn.Module):
             timesteps=timesteps,
             target_noise=target_noise,
         )
-        predicted_noise = self.model(noisy_image, timesteps)
+        predicted_noise = self.model(noisy_image, timesteps, class_ids=class_ids)
         return predicted_noise, target_noise, noisy_image, timesteps
 
     def reconstruct_clean(

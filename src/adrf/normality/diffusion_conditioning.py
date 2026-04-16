@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
+from typing import Sequence
 
 import torch
 
@@ -85,6 +86,7 @@ def resolve_optional_class_ids(
     class_to_index: dict[str, int],
     fit: bool,
     backend: str,
+    supported_backends: Sequence[str] = ("legacy",),
     model_name: str,
 ) -> torch.Tensor | None:
     """Resolve class ids when class conditioning is enabled and supported."""
@@ -93,7 +95,8 @@ def resolve_optional_class_ids(
         return None
     if samples is None:
         raise ValueError(f"{model_name} class conditioning requires samples.")
-    if backend != "legacy":
+    normalized_supported_backends = {value.strip().lower() for value in supported_backends}
+    if backend.strip().lower() not in normalized_supported_backends:
         raise NotImplementedError("Class-conditioned diffusers backend is not implemented yet.")
     return resolve_class_ids_from_samples(
         samples,

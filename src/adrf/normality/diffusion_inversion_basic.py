@@ -93,6 +93,7 @@ class DiffusionInversionBasicNormality(DiffusionBasicNormality):
             class_to_index=self.class_to_index,
             fit=False,
             backend=self.backend,
+            supported_backends=("legacy", "diffusers"),
             model_name=type(self).__name__,
         )
         if class_ids is not None:
@@ -105,7 +106,7 @@ class DiffusionInversionBasicNormality(DiffusionBasicNormality):
                 self._ensure_diffusers_backend(sample_size=int(current_state.shape[-1]))
 
                 def predict_noise_fn(state: torch.Tensor, timestep_batch: torch.Tensor, _noise_scale: torch.Tensor) -> torch.Tensor:
-                    return self.diffusers_adapter.model(state, timestep_batch)
+                    return self.diffusers_adapter.model(state, timestep_batch, class_ids=class_ids)
             else:
 
                 def predict_noise_fn(state: torch.Tensor, timestep_batch: torch.Tensor, noise_scale: torch.Tensor) -> torch.Tensor:

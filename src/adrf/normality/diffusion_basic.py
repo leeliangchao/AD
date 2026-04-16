@@ -124,6 +124,7 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
             class_to_index=self.class_to_index,
             fit=True,
             backend=self.backend,
+            supported_backends=("legacy", "diffusers"),
             model_name=type(self).__name__,
         )
         if self.backend == "diffusers":
@@ -151,7 +152,7 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
                 )
                 with autocast_context:
                     if self.backend == "diffusers":
-                        loss, _ = self.diffusers_adapter.forward_train_step(clean_batch)
+                        loss, _ = self.diffusers_adapter.forward_train_step(clean_batch, class_ids=batch_class_ids)
                     else:
                         noisy_batch, target_noise, timesteps, noise_scales = self._sample_noisy_inputs(clean_batch)
                         predicted_noise = self.denoiser(
@@ -187,6 +188,7 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
             class_to_index=self.class_to_index,
             fit=False,
             backend=self.backend,
+            supported_backends=("legacy", "diffusers"),
             model_name=type(self).__name__,
         )
         if class_ids is not None:
@@ -204,6 +206,7 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
                 predicted_noise, target_noise, noisy_image, timesteps = self.diffusers_adapter.forward_infer_step(
                     clean_image,
                     target_noise=target_noise,
+                    class_ids=class_ids,
                 )
                 reconstruction = self.diffusers_adapter.reconstruct_clean(noisy_image, predicted_noise, timesteps)
                 inference_timestep = int(timesteps[0].item())
@@ -271,6 +274,7 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
             noise_level=self.noise_level,
             sample_size=sample_size,
             num_train_timesteps=self.num_train_timesteps,
+            num_classes=self.num_classes,
         )
         self.diffusers_adapter.to(self.runtime.device)
         install_normality_runtime_state(self.diffusers_adapter, self.runtime)

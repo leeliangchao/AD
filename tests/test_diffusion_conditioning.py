@@ -86,9 +86,26 @@ def test_resolve_optional_class_ids_rejects_unsupported_backend_explicitly() -> 
             class_to_index={},
             fit=True,
             backend="diffusers",
+            supported_backends=("legacy",),
             model_name="DiffusionBasicNormality",
         )
     except NotImplementedError as error:
         assert "Class-conditioned diffusers backend is not implemented yet." in str(error)
     else:
         raise AssertionError("resolve_optional_class_ids should reject unsupported class-conditioned backends.")
+
+
+def test_resolve_optional_class_ids_allows_configured_diffusers_backend() -> None:
+    samples = [Sample(image=torch.zeros(3, 4, 4), sample_id="sample-001", category="bottle")]
+
+    resolved = resolve_optional_class_ids(
+        samples,
+        num_classes=2,
+        class_to_index={},
+        fit=True,
+        backend="diffusers",
+        supported_backends=("legacy", "diffusers"),
+        model_name="DiffusionBasicNormality",
+    )
+
+    assert torch.equal(resolved, torch.tensor([0], dtype=torch.long))
