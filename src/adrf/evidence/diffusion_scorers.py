@@ -53,6 +53,21 @@ def score_direction_mismatch_from_step_updates(
     raise ValueError("direction_reduce must be either 'sum' or 'mean'.")
 
 
+def score_latent_reconstruction_residual(
+    latent_reconstruction: torch.Tensor,
+    latent_target: torch.Tensor,
+) -> torch.Tensor:
+    if latent_reconstruction.shape != latent_target.shape:
+        raise ValueError("latent_reconstruction and latent_target must have the same shape.")
+    return torch.abs(latent_reconstruction.float() - latent_target.float()).mean(dim=0)
+
+
+def score_passthrough_score_map(score_map: torch.Tensor) -> torch.Tensor:
+    if score_map.ndim != 2:
+        raise ValueError("score_map must already be a 2D anomaly map.")
+    return score_map.float()
+
+
 def _normalize_step_cost(step_cost: torch.Tensor) -> torch.Tensor:
     if not isinstance(step_cost, torch.Tensor):
         raise TypeError("Each step cost must be a torch.Tensor.")

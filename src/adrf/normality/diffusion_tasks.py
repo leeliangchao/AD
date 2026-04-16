@@ -102,3 +102,78 @@ def build_trajectory_artifacts(
         diagnostics=dict(diagnostics),
         capabilities={"trajectory", "step_costs"},
     )
+
+
+def build_latent_reconstruction_artifacts(
+    *,
+    sample_id: str | None,
+    category: str | None,
+    representation: dict[str, object],
+    latent_reconstruction: torch.Tensor,
+    latent_target: torch.Tensor,
+    reconstruction: torch.Tensor | None,
+    diagnostics: dict[str, Any],
+) -> NormalityArtifacts:
+    primary = {"latent_reconstruction": latent_reconstruction}
+    if reconstruction is not None:
+        primary["reconstruction"] = reconstruction
+    return NormalityArtifacts(
+        context={
+            "sample_id": sample_id,
+            "category": category,
+            "mode": "inference",
+        },
+        representation=representation,
+        primary=primary,
+        auxiliary={"latent_target": latent_target},
+        diagnostics=dict(diagnostics),
+        capabilities=set(),
+    )
+
+
+def build_conditioned_score_artifacts(
+    *,
+    sample_id: str | None,
+    category: str | None,
+    representation: dict[str, object],
+    score_map: torch.Tensor,
+    conditioning: dict[str, object],
+    diagnostics: dict[str, Any],
+) -> NormalityArtifacts:
+    return NormalityArtifacts(
+        context={
+            "sample_id": sample_id,
+            "category": category,
+            "mode": "inference",
+            "conditioning": dict(conditioning),
+        },
+        representation=representation,
+        auxiliary={"score_map": score_map},
+        diagnostics=dict(diagnostics),
+        capabilities=set(),
+    )
+
+
+def build_reconstruction_free_score_artifacts(
+    *,
+    sample_id: str | None,
+    category: str | None,
+    representation: dict[str, object],
+    score_map: torch.Tensor,
+    score_features: torch.Tensor,
+    diagnostics: dict[str, Any],
+) -> NormalityArtifacts:
+    return NormalityArtifacts(
+        context={
+            "sample_id": sample_id,
+            "category": category,
+            "mode": "inference",
+        },
+        representation=representation,
+        auxiliary={
+            "score_map": score_map,
+            "score_features": score_features,
+        },
+        diagnostics=dict(diagnostics),
+        capabilities=set(),
+    )

@@ -5,9 +5,11 @@ from __future__ import annotations
 import torch
 
 from adrf.evidence.diffusion_scorers import (
+    score_latent_reconstruction_residual,
     score_conditional_residual,
     score_direction_mismatch_from_step_updates,
     score_noise_residual,
+    score_passthrough_score_map,
     score_path_cost_from_step_costs,
     score_path_cost_from_step_updates,
     score_reconstruction_residual,
@@ -84,3 +86,21 @@ def test_score_direction_mismatch_from_step_updates_highlights_reversal() -> Non
 
     assert anomaly_map.shape == (2, 2)
     assert torch.all(anomaly_map >= 0)
+
+
+def test_score_latent_reconstruction_residual_reduces_latent_channel_error() -> None:
+    latent_reconstruction = torch.zeros(8, 4, 4)
+    latent_target = torch.ones(8, 4, 4)
+
+    anomaly_map = score_latent_reconstruction_residual(latent_reconstruction, latent_target)
+
+    assert anomaly_map.shape == (4, 4)
+    assert torch.allclose(anomaly_map, torch.ones(4, 4))
+
+
+def test_score_passthrough_score_map_keeps_2d_map_as_is() -> None:
+    score_map = torch.arange(4, dtype=torch.float32).reshape(2, 2)
+
+    anomaly_map = score_passthrough_score_map(score_map)
+
+    assert torch.allclose(anomaly_map, score_map)

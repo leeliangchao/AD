@@ -5,8 +5,11 @@ from __future__ import annotations
 import torch
 
 from adrf.normality.diffusion_tasks import (
+    build_conditioned_score_artifacts,
     build_conditional_reconstruction_artifacts,
+    build_latent_reconstruction_artifacts,
     build_reconstruction_artifacts,
+    build_reconstruction_free_score_artifacts,
     build_trajectory_artifacts,
 )
 
@@ -69,3 +72,50 @@ def test_build_trajectory_artifacts_exposes_canonical_payload_with_legacy_proces
     assert len(artifacts.get_aux("step_updates")) == 2
     assert len(artifacts.get_aux("step_costs")) == 2
     assert artifacts.capabilities == {"trajectory", "step_costs"}
+
+
+def test_build_latent_reconstruction_artifacts_exposes_latent_payload_without_forcing_legacy_capabilities() -> None:
+    artifacts = build_latent_reconstruction_artifacts(
+        sample_id="sample-001",
+        category="bottle",
+        representation={"space": "feature"},
+        latent_reconstruction=torch.zeros(8, 4, 4),
+        latent_target=torch.ones(8, 4, 4),
+        reconstruction=torch.zeros(3, 16, 16),
+        diagnostics={"latent_space": "feature"},
+    )
+
+    assert artifacts.get_primary("latent_reconstruction").shape == (8, 4, 4)
+    assert artifacts.get_aux("latent_target").shape == (8, 4, 4)
+    assert artifacts.get_primary("reconstruction").shape == (3, 16, 16)
+    assert artifacts.capabilities == set()
+
+
+def test_build_conditioned_score_artifacts_keeps_reference_and_class_context() -> None:
+    artifacts = build_conditioned_score_artifacts(
+        sample_id="sample-001",
+        category="bottle",
+        representation={"space": "pixel"},
+        score_map=torch.ones(4, 4),
+        conditioning={"reference": "present", "class_id": 2},
+        diagnostics={"task": "one_step"},
+    )
+
+    assert artifacts.get_aux("score_map").shape == (4, 4)
+    assert artifacts.context["conditioning"] == {"reference": "present", "class_id": 2}
+    assert artifacts.capabilities == set()
+
+
+def test_build_reconstruction_free_score_artifacts_exposes_score_only_payload() -> None:
+    artifacts = build_reconstruction_free_score_artifacts(
+        sample_id="sample-001",
+        category="bottle",
+        representation={"space": "pixel"},
+        score_map=torch.ones(4, 4),
+        score_features=torch.zeros(8, 4, 4),
+        diagnostics={"task": "reconstruction_free"},
+    )
+
+    assert artifacts.get_aux("score_map").shape == (4, 4)
+    assert artifacts.get_aux("score_features").shape == (8, 4, 4)
+    assert artifacts.capabilities == set()
