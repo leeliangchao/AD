@@ -80,6 +80,58 @@ def legacy_noise_scale_from_timesteps(
     return noise_level * torch.sqrt(timestep_fraction)
 
 
+def sample_legacy_timesteps(
+    *,
+    batch_size: int,
+    device: torch.device,
+    num_train_timesteps: int,
+    inference: bool = False,
+) -> torch.Tensor:
+    """Sample training timesteps or choose a deterministic inference timestep."""
+
+    if inference:
+        return torch.full(
+            (batch_size,),
+            fill_value=num_train_timesteps - 1,
+            dtype=torch.long,
+            device=device,
+        )
+    return torch.randint(
+        low=0,
+        high=num_train_timesteps,
+        size=(batch_size,),
+        dtype=torch.long,
+        device=device,
+    )
+
+
+def sample_legacy_noisy_inputs(
+    clean_batch: torch.Tensor,
+    *,
+    num_train_timesteps: int,
+    noise_level: float,
+    inference: bool = False,
+    target_noise: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Sample Gaussian noise and produce the corresponding noisy inputs."""
+
+    timesteps = sample_legacy_timesteps(
+        batch_size=clean_batch.shape[0],
+        device=clean_batch.device,
+        num_train_timesteps=num_train_timesteps,
+        inference=inference,
+    )
+    noise_scales = legacy_noise_scale_from_timesteps(
+        timesteps,
+        num_train_timesteps=num_train_timesteps,
+        noise_level=noise_level,
+    )
+    if target_noise is None:
+        target_noise = torch.randn_like(clean_batch)
+    noisy_batch = clean_batch + noise_scales.view(-1, 1, 1, 1) * target_noise
+    return noisy_batch, target_noise, timesteps, noise_scales
+
+
 def legacy_reconstruct_clean(
     noisy_batch: torch.Tensor,
     predicted_noise: torch.Tensor,

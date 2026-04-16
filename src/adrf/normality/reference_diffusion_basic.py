@@ -18,8 +18,9 @@ from adrf.normality.diffusion_core import (
     deterministic_noise_like,
     legacy_reconstruct_clean,
     normalize_channel_mults,
+    sample_legacy_noisy_inputs,
 )
-from adrf.normality.diffusion_conditioning import resolve_class_ids_from_samples
+from adrf.normality.diffusion_conditioning import resolve_optional_class_ids
 from adrf.normality.diffusion_models import ConditionedNoisePredictor
 from adrf.normality.diffusion_tasks import build_conditional_reconstruction_artifacts
 from adrf.normality.base import BaseNormalityModel
@@ -50,6 +51,7 @@ class ReferenceDiffusionBasicNormality(nn.Module, BaseNormalityModel):
         noise_level: float = 0.2,
         num_classes: int | None = None,
         class_embed_dim: int | None = None,
+        backend: str = "legacy",
     ) -> None:
         super().__init__()
         resolved_base_channels = int(base_channels if base_channels is not None else hidden_channels)
@@ -70,6 +72,7 @@ class ReferenceDiffusionBasicNormality(nn.Module, BaseNormalityModel):
         self.epochs = epochs
         self.batch_size = batch_size
         self.noise_level = noise_level
+        self.backend = backend
         self.num_classes = int(num_classes) if num_classes is not None else None
         self.class_embed_dim = int(class_embed_dim) if class_embed_dim is not None else None
         self.base_channels = resolved_base_channels
@@ -103,17 +106,14 @@ class ReferenceDiffusionBasicNormality(nn.Module, BaseNormalityModel):
 
         if samples is None:
             raise ValueError("ReferenceDiffusionBasicNormality.fit requires samples with reference inputs.")
-
         sample_list = list(samples)
-        class_ids = (
-            resolve_class_ids_from_samples(
-                sample_list,
-                num_classes=self.num_classes,
-                class_to_index=self.class_to_index,
-                fit=True,
-            )
-            if self.num_classes is not None
-            else None
+        class_ids = resolve_optional_class_ids(
+            sample_list,
+            num_classes=self.num_classes,
+            class_to_index=self.class_to_index,
+            fit=True,
+            backend=self.backend,
+            model_name=type(self).__name__,
         )
 
         paired_tensors = [
@@ -163,16 +163,16 @@ class ReferenceDiffusionBasicNormality(nn.Module, BaseNormalityModel):
 
         clean_image = self.require_representation_tensor(representation).float().unsqueeze(0)
         reference = self._prepare_reference_tensor(sample, representation).float().unsqueeze(0)
-        class_ids = (
-            resolve_class_ids_from_samples(
-                [sample],
-                num_classes=self.num_classes,
-                class_to_index=self.class_to_index,
-                fit=False,
-            ).to(device=clean_image.device)
-            if self.num_classes is not None
-            else None
+        class_ids = resolve_optional_class_ids(
+            [sample],
+            num_classes=self.num_classes,
+            class_to_index=self.class_to_index,
+            fit=False,
+            backend=self.backend,
+            model_name=type(self).__name__,
         )
+        if class_ids is not None:
+            class_ids = class_ids.to(device=clean_image.device)
         inference_identity = sample.sample_id or representation.sample_id or "inference"
         target_noise = deterministic_noise_like(
             clean_image,
@@ -221,36 +221,14 @@ class ReferenceDiffusionBasicNormality(nn.Module, BaseNormalityModel):
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Sample Gaussian noise and produce the corresponding noisy inputs."""
 
-        timesteps = self._sample_timesteps(clean_batch.shape[0], clean_batch.device, inference=inference)
-        noise_scale = self._noise_scale_from_timesteps(timesteps).view(-1, 1, 1, 1)
-        if target_noise is None:
-            target_noise = torch.randn_like(clean_batch)
-        noisy_batch = clean_batch + noise_scale * target_noise
-        return noisy_batch, target_noise, timesteps
-
-    def _sample_timesteps(
-        self,
-        batch_size: int,
-        device: torch.device,
-        *,
-        inference: bool = False,
-    ) -> torch.Tensor:
-        """Sample training timesteps or choose a deterministic inference timestep."""
-
-        if inference:
-            return torch.full(
-                (batch_size,),
-                fill_value=self.num_train_timesteps - 1,
-                dtype=torch.long,
-                device=device,
-            )
-        return torch.randint(
-            low=0,
-            high=self.num_train_timesteps,
-            size=(batch_size,),
-            dtype=torch.long,
-            device=device,
+        noisy_batch, target_noise, timesteps, _noise_scales = sample_legacy_noisy_inputs(
+            clean_batch,
+            num_train_timesteps=self.num_train_timesteps,
+            noise_level=self.noise_level,
+            inference=inference,
+            target_noise=target_noise,
         )
+        return noisy_batch, target_noise, timesteps
 
     def _noise_scale_from_timesteps(self, timesteps: torch.Tensor) -> torch.Tensor:
         """Map discrete timesteps onto bounded per-sample noise scales."""

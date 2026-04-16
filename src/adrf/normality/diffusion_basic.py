@@ -20,8 +20,9 @@ from adrf.normality.diffusion_core import (
     legacy_noise_scale_from_timesteps,
     legacy_reconstruct_clean,
     normalize_channel_mults,
+    sample_legacy_noisy_inputs,
 )
-from adrf.normality.diffusion_conditioning import resolve_class_ids_from_samples
+from adrf.normality.diffusion_conditioning import resolve_optional_class_ids
 from adrf.normality.diffusion_models import ConditionedResidualConvBlock, NoisePredictor, ResidualConvBlock
 from adrf.normality.diffusion_tasks import build_reconstruction_artifacts
 from adrf.normality.state import install_normality_runtime_state, make_default_normality_runtime_state
@@ -106,26 +107,19 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
     ) -> None:
         """Train the denoiser on normal pixel-space representations."""
 
-        if self.num_classes is not None and self.backend == "diffusers":
-            raise NotImplementedError("Class-conditioned diffusers backend is not implemented yet.")
-
         sample_list = list(samples) if samples is not None else None
-        if self.num_classes is not None and sample_list is None:
-            raise ValueError("Class-conditioned diffusion training requires samples.")
         tensors = [self.require_representation_tensor(representation).float() for representation in representations]
         if not tensors:
             raise ValueError("DiffusionBasicNormality.fit requires at least one representation.")
 
         train_batch = torch.stack(tensors, dim=0)
-        train_class_ids = (
-            resolve_class_ids_from_samples(
-                sample_list,
-                num_classes=self.num_classes,
-                class_to_index=self.class_to_index,
-                fit=True,
-            )
-            if self.num_classes is not None
-            else None
+        train_class_ids = resolve_optional_class_ids(
+            sample_list,
+            num_classes=self.num_classes,
+            class_to_index=self.class_to_index,
+            fit=True,
+            backend=self.backend,
+            model_name=type(self).__name__,
         )
         if self.backend == "diffusers":
             self._ensure_diffusers_backend(sample_size=int(train_batch.shape[-1]))
@@ -182,16 +176,16 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
 
         clean_image = self.require_representation_tensor(representation).float().unsqueeze(0)
         inference_identity = sample.sample_id or representation.sample_id or "inference"
-        class_ids = (
-            resolve_class_ids_from_samples(
-                [sample],
-                num_classes=self.num_classes,
-                class_to_index=self.class_to_index,
-                fit=False,
-            ).to(device=clean_image.device)
-            if self.num_classes is not None
-            else None
+        class_ids = resolve_optional_class_ids(
+            [sample],
+            num_classes=self.num_classes,
+            class_to_index=self.class_to_index,
+            fit=False,
+            backend=self.backend,
+            model_name=type(self).__name__,
         )
+        if class_ids is not None:
+            class_ids = class_ids.to(device=clean_image.device)
         target_noise = deterministic_noise_like(
             clean_image,
             type(self).__name__,
@@ -201,8 +195,6 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
         )
         with torch.no_grad():
             if self.backend == "diffusers":
-                if self.num_classes is not None:
-                    raise NotImplementedError("Class-conditioned diffusers backend is not implemented yet.")
                 self._ensure_diffusers_backend(sample_size=int(clean_image.shape[-1]))
                 predicted_noise, target_noise, noisy_image, timesteps = self.diffusers_adapter.forward_infer_step(
                     clean_image,
@@ -245,35 +237,12 @@ class DiffusionBasicNormality(nn.Module, BaseNormalityModel):
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Sample Gaussian noise and produce the corresponding noisy inputs."""
 
-        timesteps = self._sample_timesteps(clean_batch.shape[0], clean_batch.device, inference=inference)
-        noise_scale = self._noise_scale_from_timesteps(timesteps).view(-1, 1, 1, 1)
-        if target_noise is None:
-            target_noise = torch.randn_like(clean_batch)
-        noisy_batch = clean_batch + noise_scale * target_noise
-        return noisy_batch, target_noise, timesteps, noise_scale.view(-1)
-
-    def _sample_timesteps(
-        self,
-        batch_size: int,
-        device: torch.device,
-        *,
-        inference: bool = False,
-    ) -> torch.Tensor:
-        """Sample training timesteps or choose a deterministic inference timestep."""
-
-        if inference:
-            return torch.full(
-                (batch_size,),
-                fill_value=self.num_train_timesteps - 1,
-                dtype=torch.long,
-                device=device,
-            )
-        return torch.randint(
-            low=0,
-            high=self.num_train_timesteps,
-            size=(batch_size,),
-            dtype=torch.long,
-            device=device,
+        return sample_legacy_noisy_inputs(
+            clean_batch,
+            num_train_timesteps=self.num_train_timesteps,
+            noise_level=self.noise_level,
+            inference=inference,
+            target_noise=target_noise,
         )
 
     def _noise_scale_from_timesteps(self, timesteps: torch.Tensor) -> torch.Tensor:

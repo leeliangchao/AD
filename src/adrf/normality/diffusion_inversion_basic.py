@@ -9,7 +9,7 @@ import torch
 from adrf.core.artifacts import NormalityArtifacts
 from adrf.core.sample import Sample
 from adrf.normality.diffusion_basic import DiffusionBasicNormality
-from adrf.normality.diffusion_conditioning import resolve_class_ids_from_samples
+from adrf.normality.diffusion_conditioning import resolve_optional_class_ids
 from adrf.normality.diffusion_core import deterministic_noise_like, run_legacy_reverse_rollout
 from adrf.normality.diffusion_tasks import build_trajectory_artifacts
 from adrf.representation.contracts import RepresentationOutput
@@ -87,23 +87,21 @@ class DiffusionInversionBasicNormality(DiffusionBasicNormality):
 
         inference_identity = sample.sample_id or representation.sample_id or "inference"
         current_state = self._initial_state(representation, identity=inference_identity)
-        class_ids = (
-            resolve_class_ids_from_samples(
-                [sample],
-                num_classes=self.num_classes,
-                class_to_index=self.class_to_index,
-                fit=False,
-            ).to(device=current_state.device)
-            if self.num_classes is not None
-            else None
+        class_ids = resolve_optional_class_ids(
+            [sample],
+            num_classes=self.num_classes,
+            class_to_index=self.class_to_index,
+            fit=False,
+            backend=self.backend,
+            model_name=type(self).__name__,
         )
+        if class_ids is not None:
+            class_ids = class_ids.to(device=current_state.device)
 
         with torch.no_grad():
             rollout_timesteps = self._rollout_timesteps(current_state.device)
             rollout_scales = self._noise_scale_from_timesteps(rollout_timesteps)
             if self.backend == "diffusers":
-                if self.num_classes is not None:
-                    raise NotImplementedError("Class-conditioned diffusers backend is not implemented yet.")
                 self._ensure_diffusers_backend(sample_size=int(current_state.shape[-1]))
 
                 def predict_noise_fn(state: torch.Tensor, timestep_batch: torch.Tensor, _noise_scale: torch.Tensor) -> torch.Tensor:

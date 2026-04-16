@@ -76,3 +76,28 @@ def resolve_class_ids_from_samples(
             raise ValueError(f"class_id={class_id} is outside configured range [0, {num_classes}).")
         indices.append(class_id)
     return torch.tensor(indices, dtype=torch.long)
+
+
+def resolve_optional_class_ids(
+    samples: list[Sample] | None,
+    *,
+    num_classes: int | None,
+    class_to_index: dict[str, int],
+    fit: bool,
+    backend: str,
+    model_name: str,
+) -> torch.Tensor | None:
+    """Resolve class ids when class conditioning is enabled and supported."""
+
+    if num_classes is None:
+        return None
+    if samples is None:
+        raise ValueError(f"{model_name} class conditioning requires samples.")
+    if backend != "legacy":
+        raise NotImplementedError("Class-conditioned diffusers backend is not implemented yet.")
+    return resolve_class_ids_from_samples(
+        samples,
+        num_classes=num_classes,
+        class_to_index=class_to_index,
+        fit=fit,
+    )
