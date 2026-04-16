@@ -9,6 +9,7 @@ import torch
 from adrf.core.artifacts import NormalityArtifacts
 from adrf.core.sample import Sample
 from adrf.evidence.base import BaseEvidenceModel
+from adrf.evidence.diffusion_scorers import score_noise_residual
 
 
 class NoiseResidualEvidence(BaseEvidenceModel):
@@ -25,14 +26,5 @@ class NoiseResidualEvidence(BaseEvidenceModel):
         target_noise = artifacts.get_aux("target_noise")
         if not isinstance(predicted_noise, torch.Tensor) or not isinstance(target_noise, torch.Tensor):
             raise TypeError("NoiseResidualEvidence expects tensor-valued predicted_noise and target_noise.")
-        if predicted_noise.shape != target_noise.shape:
-            raise ValueError("predicted_noise and target_noise must have the same shape.")
-
-        residual = torch.abs(predicted_noise.float() - target_noise.float())
-        if residual.ndim == 3:
-            anomaly_map = residual.mean(dim=0)
-        elif residual.ndim == 2:
-            anomaly_map = residual
-        else:
-            raise ValueError("NoiseResidualEvidence expects 2D or 3D noise tensors.")
+        anomaly_map = score_noise_residual(predicted_noise, target_noise)
         return self.build_prediction(anomaly_map)

@@ -9,6 +9,7 @@ import torch
 from adrf.core.artifacts import NormalityArtifacts
 from adrf.core.sample import Sample
 from adrf.evidence.base import BaseEvidenceModel
+from adrf.evidence.diffusion_scorers import score_direction_mismatch_from_step_updates
 
 
 class DirectionMismatchEvidence(BaseEvidenceModel):
@@ -27,36 +28,15 @@ class DirectionMismatchEvidence(BaseEvidenceModel):
 
         del sample
         transitions = self._resolve_transitions(artifacts)
-
-        mismatch_maps = []
-        for previous_delta, current_delta in zip(transitions[:-1], transitions[1:], strict=True):
-            # Penalize per-pixel sign reversals between consecutive trajectory steps.
-            reversal = torch.relu(-(previous_delta * current_delta))
-            mismatch_maps.append(self._reduce_channels(reversal))
-
-        if not mismatch_maps:
-            anomaly_map = torch.zeros_like(self._reduce_channels(transitions[0]))
-        else:
-            stacked = torch.stack(mismatch_maps, dim=0)
-            if self.direction_reduce == "sum":
-                anomaly_map = stacked.sum(dim=0)
-            else:
-                anomaly_map = stacked.mean(dim=0)
+        anomaly_map = score_direction_mismatch_from_step_updates(
+            transitions,
+            direction_reduce=self.direction_reduce,
+        )
 
         return self.build_prediction(
             anomaly_map,
             aux_scores={"num_steps": len(transitions) + 1},
         )
-
-    @staticmethod
-    def _reduce_channels(tensor: torch.Tensor) -> torch.Tensor:
-        """Reduce a trajectory difference tensor into a 2D map."""
-
-        if tensor.ndim == 3:
-            return tensor.mean(dim=0)
-        if tensor.ndim == 2:
-            return tensor
-        raise ValueError("Trajectory states must be 2D or 3D tensors.")
 
     def _resolve_transitions(self, artifacts: NormalityArtifacts) -> list[torch.Tensor]:
         """Resolve canonical step updates first, then fall back to trajectory differences."""
